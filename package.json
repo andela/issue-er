@@ -1,0 +1,19 @@
+{
+  "name": "issue-er",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "micro",
+    "deploy": "now -e GH_WEBHOOK_SECRET -e GH_TOKEN -e GH_OWNER -e GH_REPOSITORY"
+  },
+  "dependencies": {
+    "graphql": "^0.11.3",
+    "graphql-request": "^1.3.6",
+    "micro": "^9.0.0",
+    "micro-cors": "^0.0.4"
+  },
+  "devDependencies": {
+    "micro-dev": "^1.2.3"
+  }
+}
