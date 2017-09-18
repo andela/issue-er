@@ -1,31 +1,74 @@
+require('dotenv-safe').load()
+
 const { json, send } = require('micro')
 // const cors = require('micro-cors')()
 const { GraphQLClient, request } = require('graphql-request')
 const crypto = require('crypto')
 
-
-const endpoint = 'https://api.github.com/graphql'
+// Env Variables
 const token = process.env.GH_TOKEN
 const secret = process.env.GH_WEBHOOK_SECRET
 const owner = process.env.GH_OWNER
 const repository = process.env.GH_REPOSITORY
+const endpoint = process.env.GH_ENDPOINT
 
-
-// if (!token && !secret) {
-//     throw Error(`Missing 'GH_TOKEN' && 'GH_WEBHOOK_SECRET' env variables`)
-// }
-
-
+// Initialize GraphQLClient
 const client = new GraphQLClient(endpoint, {
   headers: {
     Authorization: `bearer ${token}`,
   },
 })
 
+// Initialize query and mutation variable object
+const variables = {
+  "owner": owner,
+  "name": repository,
+}
+
+
 
 function signRequestBody(key, body) {
   return `sha1=${crypto.createHmac('sha1', key.toString()).update(body.toString(), 'utf-8').digest('hex')}`
 }
+
+
+
+function addProjectCard(...args) {
+  
+  const { query, variables } = args
+  let addProjectCardPayload
+
+  try {
+      addProjectCardPayload = await client.request(query, variables) 
+  } catch (error) {
+      return send(res, 401, {  headers: { 'Content-Type': 'text/plain' }, body: 'Error adding issue to project' })
+  }
+  return addProjectCardPayload
+}
+
+function deleteProjectCard(...args) {
+
+  const { query, variables } = args
+  let deleteProjectCardPayload
+
+  try {
+      deleteProjectCardPayload = await client.request(query, variables) 
+  } catch (error) {
+      return send(res, 401, {  headers: { 'Content-Type': 'text/plain' }, body: 'Error deleting issue to project' })
+  }
+  return deleteProjectCardPayload
+}
+
+// Grapql Queries & Mutations
+
+const FindProjectByName = `
+
+`
+
+
+
+
+
 
 module.exports = async function (req, res) {
   
@@ -131,7 +174,7 @@ module.exports = async function (req, res) {
   }
 
   try {
-      addIssueToProjectPayload = await client.request(AddIssueToProject, variables)
+      const addIssueToProjectPayload = await client.request(AddIssueToProject, variables)
     if (!addIssueToProjectPayload) {
       return send(res, 200, {  headers: { 'Content-Type': 'text/plain' }, body: 'Project already has the associated issue' })
     }
