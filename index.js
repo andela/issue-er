@@ -1,7 +1,6 @@
 require('dotenv-safe').load()
 
 const { json, send } = require('micro')
-// const cors = require('micro-cors')()
 const { GraphQLClient, request } = require('graphql-request')
 const crypto = require('crypto')
 
@@ -20,74 +19,92 @@ const client = new GraphQLClient(endpoint, {
 })
 
 // Initialize query and mutation variable object
-const variables = {
+const baseVariables = {
   "owner": owner,
   "name": repository,
 }
-
-
 
 function signRequestBody(key, body) {
   return `sha1=${crypto.createHmac('sha1', key.toString()).update(body.toString(), 'utf-8').digest('hex')}`
 }
 
 
+// function performOperation(...args) {
+//   const { operation, variables } = args
+//   return  await client.request(operation, variables)
+// }
 
-function addProjectCard(...args) {
-  
-  const { query, variables } = args
-  let addProjectCardPayload
 
-  try {
-      addProjectCardPayload = await client.request(query, variables) 
-  } catch (error) {
-      return send(res, 401, {  headers: { 'Content-Type': 'text/plain' }, body: 'Error adding issue to project' })
-  }
-  return addProjectCardPayload
+
+// Grapql Operations: Queries & Mutations
+
+const operations = {
+  FindProjectColumnID: `
+    query FindProjectByName($owner: String!, $name: String!, $projectName: String!) {
+      repository(owner: $owner, name: $name) {
+        projects(first: 1, search: $projectName){
+          edges {
+            node {
+              columns(first:1) {
+                edges {
+                  node {
+                    id
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `,
+  FindIssueID: `
+     query FindIssueID($owner: String!, $name: String!, $issueNumber: Int!) {
+      repository(owner: $owner, name: $name) {
+        issue(number: $issueNumber) {
+          id
+        }
+      }
+    }
+  `,
+  AddProjectCard: `
+    mutation AddProjectCard($issue: AddProjectCardInput!) {
+      addProjectCard(input: $issue) {
+        cardEdge {
+          node {
+            id
+          }
+        }
+        projectColumn {
+          id
+        },
+        clientMutationId
+      }
+    }
+  `,
+  MoveProjectCard: `
+    mutation MoveProjectCard($card: MoveProjectCardInput!) {
+      moveProjectCard(input: $card) {
+        cardEdge {
+          node {
+            id
+          }
+        }
+        clientMutationId
+      }
+    }
+  `
 }
-
-function deleteProjectCard(...args) {
-
-  const { query, variables } = args
-  let deleteProjectCardPayload
-
-  try {
-      deleteProjectCardPayload = await client.request(query, variables) 
-  } catch (error) {
-      return send(res, 401, {  headers: { 'Content-Type': 'text/plain' }, body: 'Error deleting issue to project' })
-  }
-  return deleteProjectCardPayload
-}
-
-// Grapql Queries & Mutations
-
-const FindProjectByName = `
-
-`
-
-
-
-
-
 
 module.exports = async function (req, res) {
-  
+  if (!req) { return }  
   const payload = await json(req)
   const headers = req.headers
   const sig = headers['x-hub-signature']
   const githubEvent = headers['x-github-event']
   const id = headers['x-github-delivery']
-  const issueNumber = payload.issue.number
-  // const calculateSig = signRequestBody(secret, payload) 
-  let issueID
+  let operationPayload = {}
   let errorMessage
-
-  if (typeof token !== 'string') {
-    errorMessage = `Must provide a 'GH_WEBHOOK_SECRET' env variable`
-    return send(res, 401, { 
-      headers: { 'Content-Type': 'text/plain' },
-      body: errorMessage }) 
-  }
 
   if (!sig) {
     errorMessage = `No X-Hub-Signature found on request`
@@ -111,76 +128,50 @@ module.exports = async function (req, res) {
   }
 
   if (payload.action !== 'opened') {
-    errorMessage = `Only opened action on issues please :)`
+    errorMessage = `Only 'opened' action permitted at the momment`
     return send(res, 200, { 
       headers: { 'Content-Type': 'text/plain' },
       body: errorMessage }) 
   }
-  // if (sig !==  calculateSig) {
-  //   errorMessage = `X-Hub-Signature incorrect. Github webhook token doesn't match`
-  //   return send(res, 401, { 
-  //     headers: { 'Content-Type': 'text/plain' },
-  //     body: errorMessage }) 
-  // }
 
+  payload.issue.labels.forEach(async (label) => {    
+    const issueNumber = payload.issue.number
+    const projectName = label.name === 'incoming' ? 'All Projects' : label.name
 
-  console.log(`------------------------------`)
-  console.log(`Github-Event:  ${githubEvent} with action: ${payload.action}`)
-  console.log(`-------------------------------`)
-  const variables = {
-    "owner": owner,
-    "name": repository,
-    "issueNumber": issueNumber,
-    "issue": {
-      "contentId": issueID,
-      "projectColumnId": "MDEzOlByb2plY3RDb2x1bW4xNDc0MzM4"
-    } 
-  }
+    const variables = Object.assign({}, baseVariables, {
+      "issueNumber": issueNumber,
+      "projectName": projectName
+    })
 
-    // FindIssueId
-  const FindIssueID = `
-    query FindIssueID($owner: String!, $name: String!, $issueNumber: Int!) {
-      repository(owner: $owner, name: $name) {
-        issue(number: $issueNumber) {
-          id
+    let data
+    data  = await client.request(operations.FindIssueID, variables)
+    const issueID = data.repository.issue.id
+    data  = await client.request(operations.FindProjectColumnID, variables)
+    const columnID = data.repository.projects.edges[0].node.columns.edges[0].node.id
+
+    if(issueID && columnID) {
+
+      let mutationVariables = Object.assign({}, variables, {
+        "issue": {
+          "contentId": issueID,
+          "projectColumnId": columnID
         }
+      })
+    
+      try {
+        mutationPayload = await client.request(operations.AddProjectCard, mutationVariables)
+      } catch (error) {
+        return send(res, 401, {  headers: { 'Content-Type': 'text/plain' }, body: 'Error adding issue to project' })
       }
+
+      operationPayload = Object.assign({}, mutationPayload)
+
+    } else {
+        return send(res, 401, {  headers: { 'Content-Type': 'text/plain' }, body: 'No matching labels for project board' })
     }
-  `
 
-  const data = await client.request(FindIssueID, variables)
-  issueID = data.repository.issue.id
-  variables.issue.contentId = issueID
-  
-  // AddIssueToCard
-  
-  const AddIssueToProject = `
-    mutation AddIssueToProject($issue: AddProjectCardInput!) {
-      addProjectCard(input: $issue) {
-        cardEdge {
-          node {
-            id
-          }
-        }
-        projectColumn {
-          id
-        }
-      }
-    }
-  `
+    return "Done"
+  })
 
-  if (!issueID) {
-    return send(res, 200, {  headers: { 'Content-Type': 'text/plain' }, body: 'No issue with ID found' })
-  }
-
-  try {
-      const addIssueToProjectPayload = await client.request(AddIssueToProject, variables)
-    if (!addIssueToProjectPayload) {
-      return send(res, 200, {  headers: { 'Content-Type': 'text/plain' }, body: 'Project already has the associated issue' })
-    }
-  } catch (error) {
-      return send(res, 401, {  headers: { 'Content-Type': 'text/plain' }, body: 'Error adding issue to project' })
-  }
-
-  return send(res, 200, { headers: { 'Content-Type':'application/json' }, body: `Done: \n${addIssueToProjectPayload}` })
+  return send(res, 200, { headers: { 'Content-Type':'application/json' }, body: `Done with response: ${JSON.stringify(operationPayload)}` })
 }
