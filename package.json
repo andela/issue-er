@@ -1,5 +1,5 @@
 {
-  "name": "as-gh-issue-er",
+  "name": "as-gh-webhook-issue-er",
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
@@ -7,7 +7,10 @@
     "start": "micro",
     "precommit": "lint-staged",
     "lint": "xo",
-    "deploy": "now -e GH_WEBHOOK_SECRET -e GH_TOKEN -e GH_OWNER -e GH_REPOSITORY"
+    "deploy": "now -e GH_WEBHOOK_SECRET -e GH_TOKEN -e GH_OWNER -e GH_REPOSITORY AIRTABLE_API_KEY AIRTABLE_BASE AIRTABLE_TABLE AIRTABLE_VIEW_ENDPOINT"  
+  },
+  "alias": {
+    "now": "as-gh-webook-issue-er"
   },
   "xo": {
     "ignores": [
