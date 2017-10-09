@@ -1,5 +1,5 @@
 {
-  "name": "as-gh-webhook-issue-er",
+  "name": "as-gh-webhook",
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
@@ -7,10 +7,7 @@
     "start": "micro",
     "precommit": "lint-staged",
     "lint": "xo",
-    "deploy": "now -e GH_WEBHOOK_SECRET -e GH_TOKEN -e GH_OWNER -e GH_REPOSITORY -e AIRTABLE_API_KEY -e AIRTABLE_BASE -e AIRTABLE_TABLE -e AIRTABLE_VIEW_ENDPOINT"  
-  },
-  "alias": {
-    "now": "as-gh-webook-issue-er"
+    "deploy": "now -e NODE_ENV=production -e GH_WEBHOOK_SECRET -e GH_TOKEN -e GH_OWNER -e GH_REPOSITORY -e AIRTABLE_API_KEY -e AIRTABLE_BASE -e AIRTABLE_TABLE -e AIRTABLE_VIEW_ENDPOINT"
   },
   "xo": {
     "ignores": [
@@ -37,6 +34,7 @@
     "graphql": "^0.11.3",
     "graphql-request": "^1.3.6",
     "micro": "^9.0.0",
+    "then-sleep": "^1.0.1",
     "verify-github-webhook": "^1.0.1"
   },
   "devDependencies": {

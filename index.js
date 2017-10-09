@@ -6,6 +6,7 @@ const { GraphQLClient } = require('graphql-request')
 const airtable = require('airtable')
 const dateFormat = require('dateformat')
 
+const dev = process.env.NODE_ENV !== 'production'
 // Env Variables
 const token = process.env.GH_TOKEN
 const secret = process.env.GH_WEBHOOK_SECRET
@@ -191,7 +192,7 @@ module.exports = async function (req, res) {
 
       const issue = await client.request(operations.FindIssueID, variables)
       const subjectId = issue.repository.issue.id
-        
+
       const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}`}).firstPage()
       const recordID = record[0].getId()
       const requestID = record[0].get('requestID')
@@ -215,29 +216,7 @@ module.exports = async function (req, res) {
       const issueNumber = payload.issue.number
       const projectName = label.name === 'incoming' ? 'All Projects' : label.name
       
-      // Lookup airtable record by issueNumber 
-      const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}` }).firstPage()
-      const recordID = record[0].getId()
-      const recordJobStatus = record[0].get('jobStatus')
-
-      // Update airtable jobStatus field with label if airtable record exists &&
-      // Label status is in statuses && record status is not the same as label name
-      if (recordID && statuses.includes(status) && status !== recordJobStatus) {
-
-        await base.update(recordID, { 'jobStatus': status })
-
-        const today = dateFormat(new Date(), 'isoDate')
-
-        if (status === 'accepted') {
-          await base.update(recordID, { 'startDate': today })
-        }
-
-        if (status === 'completed') {
-          await base.update(recordID, { 'dateDelivered': today })
-        }
-
-      }
-
+      
       // Add issue to project board
       const variables =  Object.assign({}, baseVariables, {
         issueNumber,
@@ -261,6 +240,30 @@ module.exports = async function (req, res) {
 
           await client.request(operations.AddProjectCard, projectCardMutationVariables)
         }
+      } else {
+          // Lookup airtable record by issueNumber 
+          const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}` }).firstPage()
+          const recordID = record[0].getId()
+          const recordJobStatus = record[0].get('jobStatus')
+
+          // Update airtable jobStatus field with label if airtable record exists &&
+          // Label status is in statuses && record status is not the same as label name
+          if (recordID && statuses.includes(status) && status !== recordJobStatus) {
+
+            await base.update(recordID, { 'jobStatus': status })
+
+            const today = dateFormat(new Date(), 'isoDate')
+
+            if (status === 'accepted') {
+              await base.update(recordID, { 'startDate': today })
+            }
+
+            if (status === 'completed') {
+              await base.update(recordID, { 'dateDelivered': today })
+            }
+
+          }
+
       }
     }
 
