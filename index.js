@@ -3,6 +3,7 @@ require('dotenv-safe').load()
 const crypto = require('crypto')
 const { json, send, text } = require('micro')
 const sleep = require('then-sleep')
+const GitHub = require('github-api')
 const { GraphQLClient } = require('graphql-request')
 const airtable = require('airtable')
 const dateFormat = require('dateformat')
@@ -25,6 +26,10 @@ const client = new GraphQLClient(endpoint, {
     Authorization: `bearer ${token}`,
   },
 })
+
+// Initialize GitHub Instance
+
+const gh = new GitHub({token}).getIssues(`${owner}/${name}`)
 
 // Initialize Airtable client
 airtable.configure({
@@ -193,7 +198,7 @@ module.exports = async function (req, res) {
 
       const issue = await client.request(operations.FindIssueID, variables)
       const subjectId = issue.repository.issue.id
-      
+
       if (!dev) { await sleep(3000) } // Delay for Zap to update Airtable record field 'githubIssue'
 
       const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}`}).firstPage()
@@ -201,16 +206,7 @@ module.exports = async function (req, res) {
       const requestID = record[0].get('requestID')
       const recordView = view + recordID
 
-      if (subjectId) {
-
-        const body = `## Request ID: [${requestID}](${recordView}) \r\n`
-
-        const mutationVariables = Object.assign({}, variables, {
-          "issue": { subjectId , body }
-        })
-
-        await client.request(operations.AddComment, mutationVariables)
-      }
+      await gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${recordView}) \r\n ${payload.issue.body}` })
     }
 
     if (action === 'labeled') {
@@ -247,6 +243,8 @@ module.exports = async function (req, res) {
           const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}` }).firstPage()
           const recordID = record[0].getId()
           const recordJobStatus = record[0].get('jobStatus')
+          const expediteReq = record[0].get('expedite')
+
 
           // Update airtable jobStatus field with label if airtable record exists &&
           // Label status is in statuses && record status is not the same as label name
@@ -264,6 +262,12 @@ module.exports = async function (req, res) {
               await base.update(recordID, { 'dateDelivered': today })
             }
 
+          }
+
+        
+          if (expediteReq) {
+            const labels = Array.from(payload.issue.labels).push('expedite')
+            await gh.editIssue(issueNumber, { labels })
           }
 
       }
