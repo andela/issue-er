@@ -7,7 +7,10 @@
     "start": "micro",
     "precommit": "lint-staged",
     "lint": "xo",
-    "deploy": "now -e NODE_ENV=production -e GH_WEBHOOK_SECRET -e GH_TOKEN -e GH_OWNER -e GH_REPOSITORY -e AIRTABLE_API_KEY -e AIRTABLE_BASE -e AIRTABLE_TABLE -e AIRTABLE_VIEW_ENDPOINT"
+    "deploy": "now -e NODE_ENV=production -e GH_WEBHOOK_SECRET -e GH_TOKEN -e GH_OWNER -e GH_REPOSITORY -e AIRTABLE_API_KEY -e AIRTABLE_BASE -e AIRTABLE_TABLE -e AIRTABLE_VIEW_ENDPOINT && now alias"
+  },
+  "now": {
+    "alias": "as-gh-webhook"
   },
   "xo": {
     "ignores": [

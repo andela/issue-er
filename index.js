@@ -2,6 +2,7 @@ require('dotenv-safe').load()
 
 const crypto = require('crypto')
 const { json, send, text } = require('micro')
+const sleep = require('then-sleep')
 const { GraphQLClient } = require('graphql-request')
 const airtable = require('airtable')
 const dateFormat = require('dateformat')
@@ -192,6 +193,8 @@ module.exports = async function (req, res) {
 
       const issue = await client.request(operations.FindIssueID, variables)
       const subjectId = issue.repository.issue.id
+      
+      if (!dev) { await sleep(3000) } // Delay for Zap to update Airtable record field 'githubIssue'
 
       const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}`}).firstPage()
       const recordID = record[0].getId()
@@ -215,7 +218,6 @@ module.exports = async function (req, res) {
       const status = label.name
       const issueNumber = payload.issue.number
       const projectName = label.name === 'incoming' ? 'All Projects' : label.name
-      
       
       // Add issue to project board
       const variables =  Object.assign({}, baseVariables, {
