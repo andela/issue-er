@@ -194,10 +194,6 @@ module.exports = async function (req, res) {
     if (action === 'opened') {
 
       const issueNumber = payload.issue.number
-      const variables =  Object.assign({}, baseVariables, { issueNumber })
-
-      const issue = await client.request(operations.FindIssueID, variables)
-      const subjectId = issue.repository.issue.id
 
       if (!dev) { await sleep(3000) } // Delay for Zap to update Airtable record field 'githubIssue'
 
@@ -205,8 +201,19 @@ module.exports = async function (req, res) {
       const recordID = record[0].getId()
       const requestID = record[0].get('requestID')
       const recordView = view + recordID
+      const expediteReq = record[0].get('expedite')
 
+      // Add 'expedite' label to issue is expedite requested
+      if (expediteReq) {
+        const label = 'expedite'
+        const labels = payload.issue.labels.map((label) => label.name)
+        labels.push(label)
+        await gh.editIssue(issueNumber, { labels })
+      }
+      
+      // Add requestID and link to issue body
       await gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${recordView}) \r\n ${payload.issue.body}` })
+
     }
 
     if (action === 'labeled') {
@@ -235,7 +242,7 @@ module.exports = async function (req, res) {
           const projectCardMutationVariables = Object.assign({}, variables, {
             "issue": { contentId, projectColumnId }
           })
-
+   
           await client.request(operations.AddProjectCard, projectCardMutationVariables)
         }
       } else {
@@ -243,7 +250,6 @@ module.exports = async function (req, res) {
           const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}` }).firstPage()
           const recordID = record[0].getId()
           const recordJobStatus = record[0].get('jobStatus')
-          const expediteReq = record[0].get('expedite')
 
 
           // Update airtable jobStatus field with label if airtable record exists &&
@@ -263,12 +269,7 @@ module.exports = async function (req, res) {
             }
 
           }
-
         
-          if (expediteReq) {
-            const labels = Array.from(payload.issue.labels).push('expedite')
-            await gh.editIssue(issueNumber, { labels })
-          }
 
       }
     }
