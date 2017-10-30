@@ -5,7 +5,7 @@ const { json, send, text } = require('micro')
 const sleep = require('then-sleep')
 const GitHub = require('github-api')
 const { GraphQLClient } = require('graphql-request')
-const airtable = require('airtable')
+const Airtable = require('airtable')
 const dateFormat = require('dateformat')
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -17,7 +17,6 @@ const name = process.env.GH_REPOSITORY
 const endpoint = process.env.GH_ENDPOINT
 const airtableKey = process.env.AIRTABLE_API_KEY
 const airtableBase = process.env.AIRTABLE_BASE
-const table = process.env.AIRTABLE_TABLE
 const view = process.env.AIRTABLE_VIEW_ENDPOINT
 
 // Initialize GraphQLClient
@@ -31,12 +30,9 @@ const client = new GraphQLClient(endpoint, {
 
 const gh = new GitHub({token}).getIssues(`${owner}/${name}`)
 
-// Initialize Airtable client
-airtable.configure({
-  apiKey: airtableKey
-})
-
-const base = airtable.base(airtableBase)(table)
+const base = new Airtable({
+  apiKey: airtableKey 
+}).base(airtableBase)
 
 // Create query and mutation variable object
 const baseVariables = { owner, name }
@@ -197,7 +193,7 @@ module.exports = async function (req, res) {
 
       if (!dev) { await sleep(3000) } // Delay for Zap to update Airtable record field 'githubIssue'
 
-      const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}`}).firstPage()
+      const record = await base('request').select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
       const recordID = record[0].getId()
       const requestID = record[0].get('requestID')
       const recordView = view + recordID
@@ -248,7 +244,7 @@ module.exports = async function (req, res) {
       }
 
       // Lookup airtable record by issueNumber 
-      const record = await base.select({ filterByFormula: `githubIssue = ${issueNumber}` }).firstPage()
+      const record = await base('request').select({ filterByFormula: `githubIssue = '${issueNumber}'` }).firstPage()
       const recordID = record[0].getId()
       const recordJobStatus = record[0].get('jobStatus')
 
@@ -257,16 +253,23 @@ module.exports = async function (req, res) {
       // Label status is in statuses && record status is not the same as label name
       if (recordID && statuses.includes(status) && status !== recordJobStatus) {
 
-        await base.update(recordID, { 'jobStatus': status })
+        await base('request').update(recordID, { 'jobStatus': status })
 
         const today = dateFormat(new Date(), 'isoDate')
 
         if (status === 'accepted') {
-          await base.update(recordID, { 'startDate': today, 'studioOwner': `@${assignee}` })
+          const staffRecord = await base('staff').select({ filterByFormula: `github = '@${assignee}'` }).firstPage()
+          const studioOwner = staffRecord[0]
+
+          if (studioOwner) {
+            await base('request').update(recordID, { 'startDate': today, 'studioOwner': [`${studioOwner.getId()}`] })
+          } else {
+            await base('request').update(recordID, { 'startDate': today })
+          }
         }
 
         if (status === 'completed') {
-          await base.update(recordID, { 'dateDelivered': today })
+          await base('request').update(recordID, { 'dateDelivered': today })
         }
       }
     }
