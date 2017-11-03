@@ -2,13 +2,11 @@ require('dotenv-safe').load()
 
 const crypto = require('crypto')
 const { json, send, text } = require('micro')
-const sleep = require('then-sleep')
 const GitHub = require('github-api')
 const { GraphQLClient } = require('graphql-request')
 const Airtable = require('airtable')
 const dateFormat = require('dateformat')
 
-const dev = process.env.NODE_ENV !== 'production'
 // Env Variables
 const token = process.env.GH_TOKEN
 const secret = process.env.GH_WEBHOOK_SECRET
@@ -26,10 +24,10 @@ const client = new GraphQLClient(endpoint, {
   },
 })
 
-// Initialize GitHub Instance
-
+// Initialize GitHub instance
 const gh = new GitHub({token}).getIssues(`${owner}/${name}`)
 
+// Initialize Airtable base
 const base = new Airtable({
   apiKey: airtableKey 
 }).base(airtableBase)
@@ -138,6 +136,19 @@ function signRequestBody(key, body) {
   return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
 }
 
+function getAirtableRequestRecord (table, issueNumber) {
+  return new Promise(resolve => {
+    setTimeout(() => {
+      const record = table.select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
+      resolve(record)
+    }, 3000)
+  })
+}
+
+function getAirtableStaffRecord (table, assignee) {
+   return table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
+}
+
 module.exports = async function (req, res) {
 
   try {
@@ -149,7 +160,6 @@ module.exports = async function (req, res) {
     const id = headers['x-github-delivery']
     const calculatedSig = signRequestBody(secret, body)
     const action = payload.action
-    const issueNumber = payload.issue.number
     let errMessage
 
     if (!sig) {
@@ -187,32 +197,31 @@ module.exports = async function (req, res) {
         body: errMessage }) 
     }
 
+    if (action === 'edited') {
+      errMessage = `Can't handle edits, sorry :)`
+      return send(res, 200, { 
+        headers: { 'Content-Type': 'text/plain' },
+        body: errMessage }) 
+    }
+
+    const issueNumber = payload.issue.number
+    const requestRecord = await getAirtableRequestRecord(base('request'), issueNumber)
+    const requestRecordID = requestRecord[0].getId()
+    const requestID = requestRecord[0].get('requestID')
+    const requestView = view + requestRecordID
 
     if (action === 'opened') {
 
-      if (!dev) { await sleep(3000) } // Delay for Zap to update Airtable record field 'githubIssue'
-      const record = await base('request').select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
-      const recordID = record[0].getId()
-      const requestID = record[0].get('requestID')
-      const recordView = view + recordID
-      const expediteReq = record[0].get('expedite')
-
-      // Add 'expedite' label to issue is expedite requested
-      if (expediteReq) {
-        const expediteLabel = 'expedite'
-        const labels = payload.issue.labels.map((label) => label.name).push(expediteLabel)
-        await gh.editIssue(issueNumber, { labels })
-      }
-      
       // Add requestID and link to issue body
-      await gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${recordView}) \r\n ${payload.issue.body}` })
+      const requestBrief = payload.issue.body
+      await gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}` })
     }
 
     if (action === 'labeled') {
       const label = payload.label
-      const assignee = payload.issue.assignee.login
       const status = label.name
       const projectName = label.name === 'incoming' ? 'All Projects' : label.name
+      const requestJobStatus = requestRecord[0].get('jobStatus')
       
       // Add issue to project board
       const variables =  Object.assign({}, baseVariables, {
@@ -220,10 +229,13 @@ module.exports = async function (req, res) {
         projectName
       })
 
-      const issue = await client.request(operations.FindIssueID, variables)
-      const contentId = issue.repository.issue.id
+      const findIssueID = client.request(operations.FindIssueID, variables)
 
-      const project = await client.request(operations.FindProjectColumnID, variables)
+      const findProjectColumnID = client.request(operations.FindProjectColumnID, variables)
+
+      const [issue, project] = await Promise.all([findIssueID, findProjectColumnID])
+
+      const contentId = issue.repository.issue.id
 
       if (project.repository.projects.edges.length === 1 && payload.sender.login === 'studiobot' ) {
 
@@ -239,40 +251,53 @@ module.exports = async function (req, res) {
         }
       }
 
-      // Lookup airtable record by issueNumber 
-      const record = await base('request').select({ filterByFormula: `githubIssue = '${issueNumber}'` }).firstPage()
-      const recordID = record[0].getId()
-      const recordJobStatus = record[0].get('jobStatus')
-
-
       // Update airtable jobStatus field with label if airtable record exists &&
       // Label status is in statuses && record status is not the same as label name
-      if (recordID && statuses.includes(status) && status !== recordJobStatus) {
+      if (requestRecordID && statuses.includes(status) && status !== requestJobStatus) {
 
-        await base('request').update(recordID, { 'jobStatus': status })
+        await base('request').update(requestRecordID, { 'jobStatus': status })
 
         const today = dateFormat(new Date(), 'isoDate')
 
         if (status === 'accepted') {
-          await base('request').update(recordID, { 'startDate': today })
+          await base('request').update(requestRecordID, { 'startDate': today })
         }
 
         if (status === 'completed') {
-          await base('request').update(recordID, { 'dateDelivered': today })
+          await base('request').update(requestRecordID, { 'dateDelivered': today })
         }
       }
-    }
 
+      const expediteReq = requestRecord[0].get('expedite')
+      const expediteLabel = 'expedite'
+      const labels = payload.issue.labels
+
+      // Add 'expedite' label to issue is expedite requested
+      if (expediteReq && label !== expediteLabel && !labels.includes(expediteLabel)) {
+
+        const currentLabels = labels.map((label) => label.name)
+        const newLabels = [expediteLabel, ...currentLabels]
+
+        await gh.editIssue(issueNumber, { labels: newLabels })
+      }
+
+    }
+    
     if (action === 'assigned') {
-      const staffRecord = await base('staff').select({ filterByFormula: `github = '@${assignee}'` }).firstPage()
+
+      const assignee = payload.issue.assignee.login
+      const staffRecord = await getAirtableStaffRecord(base('staff'), assignee)
       const studioOwner = staffRecord[0]
 
       if (studioOwner) {
-        await base('request').update(recordID, { 'studioOwner': [`${studioOwner.getId()}`] })
+
+        const staffRecordID = studioOwner.getId()
+        await base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] })
       }
     }
 
     return send(res, 200, { body: `Done with action: '${action}'` })
+
   } catch(err) {
     console.log(err)
     send(res, 500, { body: `Error occurred: ${err}` })
