@@ -148,6 +148,8 @@ module.exports = async function (req, res) {
     const githubEvent = headers['x-github-event']
     const id = headers['x-github-delivery']
     const calculatedSig = signRequestBody(secret, body)
+    const action = payload.action
+    const issueNumber = payload.issue.number
     let errMessage
 
     if (!sig) {
@@ -185,14 +187,10 @@ module.exports = async function (req, res) {
         body: errMessage }) 
     }
 
-    const action = payload.action
-    
+
     if (action === 'opened') {
 
-      const issueNumber = payload.issue.number
-
       if (!dev) { await sleep(3000) } // Delay for Zap to update Airtable record field 'githubIssue'
-
       const record = await base('request').select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
       const recordID = record[0].getId()
       const requestID = record[0].get('requestID')
@@ -201,9 +199,8 @@ module.exports = async function (req, res) {
 
       // Add 'expedite' label to issue is expedite requested
       if (expediteReq) {
-        const label = 'expedite'
-        const labels = payload.issue.labels.map((label) => label.name)
-        labels.push(label)
+        const expediteLabel = 'expedite'
+        const labels = payload.issue.labels.map((label) => label.name).push(expediteLabel)
         await gh.editIssue(issueNumber, { labels })
       }
       
@@ -215,7 +212,6 @@ module.exports = async function (req, res) {
       const label = payload.label
       const assignee = payload.issue.assignee.login
       const status = label.name
-      const issueNumber = payload.issue.number
       const projectName = label.name === 'incoming' ? 'All Projects' : label.name
       
       // Add issue to project board
@@ -258,14 +254,7 @@ module.exports = async function (req, res) {
         const today = dateFormat(new Date(), 'isoDate')
 
         if (status === 'accepted') {
-          const staffRecord = await base('staff').select({ filterByFormula: `github = '@${assignee}'` }).firstPage()
-          const studioOwner = staffRecord[0]
-
-          if (studioOwner) {
-            await base('request').update(recordID, { 'startDate': today, 'studioOwner': [`${studioOwner.getId()}`] })
-          } else {
-            await base('request').update(recordID, { 'startDate': today })
-          }
+          await base('request').update(recordID, { 'startDate': today })
         }
 
         if (status === 'completed') {
@@ -274,9 +263,18 @@ module.exports = async function (req, res) {
       }
     }
 
+    if (action === 'assigned') {
+      const staffRecord = await base('staff').select({ filterByFormula: `github = '@${assignee}'` }).firstPage()
+      const studioOwner = staffRecord[0]
+
+      if (studioOwner) {
+        await base('request').update(recordID, { 'studioOwner': [`${studioOwner.getId()}`] })
+      }
+    }
+
     return send(res, 200, { body: `Done with action: '${action}'` })
   } catch(err) {
     console.log(err)
-    send(res, 500)  
+    send(res, 500, { body: `Error occurred: ${err}` })
   }
 }
