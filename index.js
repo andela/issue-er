@@ -1,7 +1,8 @@
 require('dotenv-safe').load()
-
 const crypto = require('crypto')
+// const cors = require('micro-cors')()
 const { json, send, text } = require('micro')
+const SlackWebClient = require('@slack/client').WebClient
 const GitHub = require('github-api')
 const { GraphQLClient } = require('graphql-request')
 const Airtable = require('airtable')
@@ -16,6 +17,7 @@ const endpoint = process.env.GH_ENDPOINT
 const airtableKey = process.env.AIRTABLE_API_KEY
 const airtableBase = process.env.AIRTABLE_BASE
 const view = process.env.AIRTABLE_VIEW_ENDPOINT
+const slackToken = process.env.SLACK_TOKEN
 
 // Initialize GraphQLClient
 const client = new GraphQLClient(endpoint, {
@@ -29,12 +31,56 @@ const gh = new GitHub({token}).getIssues(`${owner}/${name}`)
 
 // Initialize Airtable base
 const base = new Airtable({
-  apiKey: airtableKey 
+  apiKey: airtableKey
 }).base(airtableBase)
+
+// Add functions to retrieve userID and userName from: https://github.com/slackapi/node-slack-sdk/issues/73
+SlackWebClient.prototype.convertToUserID = function (key) {
+  if (key in this.users) {
+    return key
+  }
+
+  for (const userID in this.users) {
+    if (userID === key || this.users[userID].name === key) {
+      return this.users[userID].name
+    }
+  }
+}
+
+SlackWebClient.prototype.convertToUserName = function (key) {
+  for (const userID in this.users) {
+    if (userID === key || this.users[userID].name === key) {
+      return this.users[userID].name
+    }
+  }
+}
+
+SlackWebClient.prototype.convertToGroupID = function (key) {
+  if (key in this.groups) {
+    return key
+  }
+
+  for (const groupID in this.groups) {
+    if (groupID === key || this.groups[groupID].name === key) {
+      return this.groups[groupID].name
+    }
+  }
+}
+
+SlackWebClient.prototype.convertToGroupName = function (key) {
+  for (const groupID in this.groups) {
+    if (groupID === key || this.groups[groupID].name === key) {
+      return this.groups[groupID].name
+    }
+  }
+}
+
+
+// Initialize Slack Token
+const slackWeb = new SlackWebClient(slackToken)
 
 // Create query and mutation variable object
 const baseVariables = { owner, name }
-
 
 // Issue status labels
 const statuses = ['incoming', 'accepted', 'in progress', 'rejected', 'blocked', 'review', 'completed', 'hold', 'canceled']
@@ -132,7 +178,7 @@ const operations = {
 }
 
 
-function signRequestBody(key, body) {
+function signRequestBody (key, body) {
   return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
 }
 
@@ -149,11 +195,58 @@ function getAirtableStaffRecord (table, assignee) {
    return table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
 }
 
-module.exports = async function (req, res) {
+function createSlackGroup (name) {
+  return slackWeb.groups.create(name,
+    (err, data) => {
+      if (err) {
+        console.log(err)
+      } else {
+        inviteToSlackGroup(data.group.id, 'studiobot')
+      }
+    })
+}
 
+function inviteToSlackGroup (groupID, user) {
+  const userID = getSlackUserID(user)
+  return slackWeb.groups.invite(groupID, userID,
+    (err) => {
+      if (err) {
+        console.log(err)
+      }
+    })
+}
+
+function getSlackUserID (name) {
+  return slackWeb.users.list((err, data) => {
+    if (err) {
+      console.log(err)
+    } else {
+      for (const user of data.members) {
+        if (user.name === name) {
+          return user.id
+        }
+      }
+    }
+  })
+}
+
+function getSlackGroupID (name) {
+  return slackWeb.groups.list((err, data) => {
+    if (err) {
+      console.log(err)
+    } else {
+      for (const group of data.groups) {
+        if (group.name === name) {
+          return group.id
+        }
+      }
+    }
+  })
+}
+
+const handler = async function (req, res) {
   try {
-    const payload = await json(req) 
-    const body = await text(req) 
+    const [payload, body] = await Promise.all([json(req), text(req)])
     const headers = req.headers
     const sig = headers['x-hub-signature']
     const githubEvent = headers['x-github-event']
@@ -161,6 +254,7 @@ module.exports = async function (req, res) {
     const calculatedSig = signRequestBody(secret, body)
     const action = payload.action
     let errMessage
+    console.log('he')
 
     if (!sig) {
       errMessage = 'No X-Hub-Signature found on request'
@@ -211,10 +305,14 @@ module.exports = async function (req, res) {
     const requestView = view + requestRecordID
 
     if (action === 'opened') {
-
       // Add requestID and link to issue body
       const requestBrief = payload.issue.body
-      await gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}` })
+      // const group = `studiojob-${issueNumber}`
+      const group = 'test-bot-studio-11'
+      await Promise.all([
+        gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}` }),
+        createSlackGroup(group)
+      ])
     }
 
     if (action === 'labeled') {
@@ -303,3 +401,5 @@ module.exports = async function (req, res) {
     send(res, 500, { body: `Error occurred: ${err}` })
   }
 }
+
+module.exports = handler
