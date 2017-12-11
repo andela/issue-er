@@ -35,6 +35,7 @@
   "dependencies": {
     "@slack/client": "^3.14.2",
     "airtable": "^0.5.0",
+    "async-retry": "^1.1.4",
     "dateformat": "^3.0.2",
     "dotenv-safe": "^4.0.4",
     "github-api": "^3.0.0",

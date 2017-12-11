@@ -1,12 +1,12 @@
 require('dotenv-safe').load()
 const crypto = require('crypto')
-// const cors = require('micro-cors')()
 const { json, send, text } = require('micro')
 const SlackWebClient = require('@slack/client').WebClient
 const GitHub = require('github-api')
 const { GraphQLClient } = require('graphql-request')
 const Airtable = require('airtable')
 const dateFormat = require('dateformat')
+const retry = require('async-retry')
 
 // Env Variables
 const token = process.env.GH_TOKEN
@@ -182,69 +182,100 @@ function signRequestBody (key, body) {
   return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
 }
 
-function getAirtableRequestRecord (table, issueNumber) {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      const record = table.select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
-      resolve(record)
-    }, 3000)
+const getAirtableRequestRecord = async (table, issueNumber) => {
+  return await retry(async () => {
+    const record = await table.select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
+    return record
+  }, {
+    retries: 500
   })
 }
 
-function getAirtableStaffRecord (table, assignee) {
-   return table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
+const getAirtableStaffRecord = async (table, assignee) => {
+  return await retry(async () => {
+    const record = await table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
+    return record
+  }, {
+    retries: 500
+  })
 }
 
-function createSlackGroup (name) {
-  return slackWeb.groups.create(name,
-    (err, data) => {
+const createSlackGroup = (name) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.create(name,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          console.log(data)
+          resolve(data.group.id)
+        }
+      })
+  })
+}
+
+const inviteToSlackGroup = (groupID, userID) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.invite(groupID, userID,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          console.log(data)
+          resolve(data)
+        }
+      })
+  })
+}
+
+const getSlackUserID = (name) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.users.list((err, data) => {
       if (err) {
         console.log(err)
+        reject(err)
       } else {
-        inviteToSlackGroup(data.group.id, 'studiobot')
+        for (const user of data.members) {
+          if (user.name === name) {
+            console.log(user)
+            resolve(user.id)
+          }
+        }
       }
+    }, {
+      limit: 1000
     })
+  })
 }
 
-function inviteToSlackGroup (groupID, user) {
-  const userID = getSlackUserID(user)
-  return slackWeb.groups.invite(groupID, userID,
-    (err) => {
+const getSlackGroupID = (name) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.list((err, data) => {
       if (err) {
         console.log(err)
+        reject(err)
+      } else {
+        for (const group of data.groups) {
+          if (group.name === name) {
+            console.log(group)
+            resolve(group.id)
+          }
+        }
       }
+    }, {
+      limit: 1000
     })
-}
-
-function getSlackUserID (name) {
-  return slackWeb.users.list((err, data) => {
-    if (err) {
-      console.log(err)
-    } else {
-      for (const user of data.members) {
-        if (user.name === name) {
-          return user.id
-        }
-      }
-    }
   })
 }
 
-function getSlackGroupID (name) {
-  return slackWeb.groups.list((err, data) => {
-    if (err) {
-      console.log(err)
-    } else {
-      for (const group of data.groups) {
-        if (group.name === name) {
-          return group.id
-        }
-      }
-    }
-  })
-}
+const handler = async (req, res) => {
+  // Return if not json body
+  if (req.headers['content-type'] !== 'application/json') {
+    return send(res, 500, { body: `Update webhook to send 'application/json' format`})
+  }
 
-const handler = async function (req, res) {
   try {
     const [payload, body] = await Promise.all([json(req), text(req)])
     const headers = req.headers
@@ -254,7 +285,6 @@ const handler = async function (req, res) {
     const calculatedSig = signRequestBody(secret, body)
     const action = payload.action
     let errMessage
-    console.log('he')
 
     if (!sig) {
       errMessage = 'No X-Hub-Signature found on request'
@@ -306,13 +336,26 @@ const handler = async function (req, res) {
 
     if (action === 'opened') {
       // Add requestID and link to issue body
+      const assignee = payload.issue.assignee.login
       const requestBrief = payload.issue.body
-      // const group = `studiojob-${issueNumber}`
-      const group = 'test-bot-studio-11'
+      const group = `studiojob-${issueNumber}`
+      let groupID = await getSlackGroupID(group)
+
       await Promise.all([
-        gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}` }),
-        createSlackGroup(group)
+        gh.editIssue(issueNumber, {
+          body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}`
+        })
       ])
+
+      const userID = await getSlackUserID(`${assignee}`)
+
+      if (groupID) {
+        await inviteToSlackGroup(groupID, userID)
+      } else {
+        await createSlackGroup(group)
+        groupID = await getSlackGroupID(group)
+        await inviteToSlackGroup(groupID)
+      }
     }
 
     if (action === 'labeled') {
@@ -382,15 +425,23 @@ const handler = async function (req, res) {
     }
     
     if (action === 'assigned') {
-
+      const group = `studiojob-${issueNumber}`
       const assignee = payload.issue.assignee.login
       const staffRecord = await getAirtableStaffRecord(base('staff'), assignee)
       const studioOwner = staffRecord[0]
 
-      if (studioOwner) {
+      const [groupID, userID] = await Promise.all([
+        getSlackGroupID(group),
+        getSlackUserID(`${assignee}`)
+      ])
 
+      if (studioOwner) {
         const staffRecordID = studioOwner.getId()
         await base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] })
+      }
+
+      if (studioOwner && userID && groupID) {
+        await inviteToSlackGroup(groupID, userID)
       }
     }
 
