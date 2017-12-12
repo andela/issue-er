@@ -34,48 +34,6 @@ const base = new Airtable({
   apiKey: airtableKey
 }).base(airtableBase)
 
-// Add functions to retrieve userID and userName from: https://github.com/slackapi/node-slack-sdk/issues/73
-SlackWebClient.prototype.convertToUserID = function (key) {
-  if (key in this.users) {
-    return key
-  }
-
-  for (const userID in this.users) {
-    if (userID === key || this.users[userID].name === key) {
-      return this.users[userID].name
-    }
-  }
-}
-
-SlackWebClient.prototype.convertToUserName = function (key) {
-  for (const userID in this.users) {
-    if (userID === key || this.users[userID].name === key) {
-      return this.users[userID].name
-    }
-  }
-}
-
-SlackWebClient.prototype.convertToGroupID = function (key) {
-  if (key in this.groups) {
-    return key
-  }
-
-  for (const groupID in this.groups) {
-    if (groupID === key || this.groups[groupID].name === key) {
-      return this.groups[groupID].name
-    }
-  }
-}
-
-SlackWebClient.prototype.convertToGroupName = function (key) {
-  for (const groupID in this.groups) {
-    if (groupID === key || this.groups[groupID].name === key) {
-      return this.groups[groupID].name
-    }
-  }
-}
-
-
 // Initialize Slack Token
 const slackWeb = new SlackWebClient(slackToken)
 
@@ -201,6 +159,7 @@ const getAirtableStaffRecord = async (table, assignee) => {
 }
 
 const createSlackGroup = (name) => {
+  console.log(name)
   return new Promise((resolve, reject) => {
     return slackWeb.groups.create(name,
       (err, data) => {
@@ -223,7 +182,6 @@ const inviteToSlackGroup = (groupID, userID) => {
           console.log(err)
           reject(err)
         } else {
-          console.log(data)
           resolve(data)
         }
       })
@@ -238,11 +196,11 @@ const getSlackUserID = (name) => {
         reject(err)
       } else {
         for (const user of data.members) {
-          if (user.name === name) {
-            console.log(user)
+          if (`@${user.name}` === name) {
             resolve(user.id)
           }
         }
+        return false
       }
     }, {
       limit: 1000
@@ -259,15 +217,60 @@ const getSlackGroupID = (name) => {
       } else {
         for (const group of data.groups) {
           if (group.name === name) {
-            console.log(group)
             resolve(group.id)
           }
         }
+        return false
       }
     }, {
-      limit: 1000
+      limit: 1000,
+      exclude_archived: true,
+      exclude_members: true
     })
   })
+}
+
+const getSlackTeamID = () => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.team.info((err, data) => {
+      if (err) reject(err)
+      resolve(data.team.id)
+    })
+  })
+}
+
+const getSlackName = (userID) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.users.info(userID,
+      (err, data) => {
+        if (err) reject(err)
+        resolve(data.user.name)
+    })
+  })
+}
+
+const retrieveSlackHistory = (groupID) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.history(groupID,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          resolve(data.messages.filter((message) => message.type === 'message' && !message.subtype))
+        }
+      }, {
+        count: 1000
+      })
+  })
+}
+
+const joinArrayObject = (arr) => {
+  let str = ''
+  for (const item of arr) {
+    str += item + '\r\n'
+  }
+  return str
 }
 
 const handler = async (req, res) => {
@@ -347,7 +350,7 @@ const handler = async (req, res) => {
         })
       ])
 
-      const userID = await getSlackUserID(`${assignee}`)
+      const userID = await getSlackUserID(`@${assignee}`)
 
       if (groupID) {
         await inviteToSlackGroup(groupID, userID)
@@ -430,18 +433,35 @@ const handler = async (req, res) => {
       const staffRecord = await getAirtableStaffRecord(base('staff'), assignee)
       const studioOwner = staffRecord[0]
 
-      const [groupID, userID] = await Promise.all([
-        getSlackGroupID(group),
-        getSlackUserID(`${assignee}`)
-      ])
-
       if (studioOwner) {
         const staffRecordID = studioOwner.getId()
-        await base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] })
+        const studioOwnerSlack = staffRecord[0].get('slack')
+        const groupID = await getSlackGroupID(group)
+        const userID = await getSlackUserID(`${studioOwnerSlack}`)
+        await Promise.all([
+          base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] }),
+          inviteToSlackGroup(groupID, userID)
+        ])
       }
+    }
 
-      if (studioOwner && userID && groupID) {
-        await inviteToSlackGroup(groupID, userID)
+    if (action === 'closed') {
+      const group = `studiojob-${issueNumber}`
+      const groupID = await getSlackGroupID(group)
+      const teamID = await getSlackTeamID()
+      // Dump Slack History in Github Issue
+      if (groupID) {
+        const history = await retrieveSlackHistory(groupID)
+        const messages = history.map(async (message) => {
+          const name = await getSlackName(message.user)
+          return `${name}: ${message.text}`
+        })
+        const groupHistory = await Promise.all(messages)
+        if (groupHistory.length >= 0) {
+          await gh.createIssueComment(issueNumber, {
+            body: `[${group}](slack://channel?team={${teamID}}&id={${groupID}}) history \r\n ${joinArrayObject(groupHistory)}`
+          })
+        }
       }
     }
 
