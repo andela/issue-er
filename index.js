@@ -191,16 +191,18 @@ const inviteToSlackGroup = (groupID, userID) => {
 const getSlackUserID = (name) => {
   return new Promise((resolve, reject) => {
     return slackWeb.users.list((err, data) => {
+      let userID = null
       if (err) {
         console.log(err)
         reject(err)
       } else {
         for (const user of data.members) {
           if (`@${user.name}` === name) {
-            resolve(user.id)
+            userID = user.id
+            break
           }
         }
-        return false
+        resolve(userID)
       }
     }, {
       limit: 1000
@@ -211,16 +213,18 @@ const getSlackUserID = (name) => {
 const getSlackGroupID = (name) => {
   return new Promise((resolve, reject) => {
     return slackWeb.groups.list((err, data) => {
+      let groupID = null
       if (err) {
         console.log(err)
         reject(err)
       } else {
         for (const group of data.groups) {
           if (group.name === name) {
-            resolve(group.id)
+            groupID = group.id
+            break
           }
         }
-        return false
+        resolve(groupID)
       }
     }, {
       limit: 1000,
@@ -239,12 +243,12 @@ const getSlackTeamID = () => {
   })
 }
 
-const getSlackName = (userID) => {
+const getSlackProfile = (userID) => {
   return new Promise((resolve, reject) => {
     return slackWeb.users.info(userID,
       (err, data) => {
         if (err) reject(err)
-        resolve(data.user.name)
+        resolve(data.user)
     })
   })
 }
@@ -448,19 +452,17 @@ const handler = async (req, res) => {
     if (action === 'closed') {
       const group = `studiojob-${issueNumber}`
       const groupID = await getSlackGroupID(group)
-      const teamID = await getSlackTeamID()
       // Dump Slack History in Github Issue
       if (groupID) {
+        const teamID = await getSlackTeamID()
         const history = await retrieveSlackHistory(groupID)
         const messages = history.map(async (message) => {
-          const name = await getSlackName(message.user)
-          return `${name}: ${message.text}`
+          const profile = await getSlackProfile(message.user)
+          return `**${profile.name}**: \r\n ${message.text}`
         })
         const groupHistory = await Promise.all(messages)
         if (groupHistory.length >= 0) {
-          await gh.createIssueComment(issueNumber, {
-            body: `[${group}](slack://channel?team={${teamID}}&id={${groupID}}) history \r\n ${joinArrayObject(groupHistory)}`
-          })
+          await gh.createIssueComment(issueNumber, `# [${group} history](https://slack.com/app_redirect?channel=${groupID}&&team=${teamID}) \r\n ${joinArrayObject(groupHistory)}`)
         }
       }
     }
