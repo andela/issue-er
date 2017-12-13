@@ -1,11 +1,12 @@
 require('dotenv-safe').load()
-
 const crypto = require('crypto')
 const { json, send, text } = require('micro')
+const SlackWebClient = require('@slack/client').WebClient
 const GitHub = require('github-api')
 const { GraphQLClient } = require('graphql-request')
 const Airtable = require('airtable')
 const dateFormat = require('dateformat')
+const retry = require('async-retry')
 
 // Env Variables
 const token = process.env.GH_TOKEN
@@ -16,6 +17,7 @@ const endpoint = process.env.GH_ENDPOINT
 const airtableKey = process.env.AIRTABLE_API_KEY
 const airtableBase = process.env.AIRTABLE_BASE
 const view = process.env.AIRTABLE_VIEW_ENDPOINT
+const slackToken = process.env.SLACK_TOKEN
 
 // Initialize GraphQLClient
 const client = new GraphQLClient(endpoint, {
@@ -29,12 +31,14 @@ const gh = new GitHub({token}).getIssues(`${owner}/${name}`)
 
 // Initialize Airtable base
 const base = new Airtable({
-  apiKey: airtableKey 
+  apiKey: airtableKey
 }).base(airtableBase)
+
+// Initialize Slack Token
+const slackWeb = new SlackWebClient(slackToken)
 
 // Create query and mutation variable object
 const baseVariables = { owner, name }
-
 
 // Issue status labels
 const statuses = ['incoming', 'accepted', 'in progress', 'rejected', 'blocked', 'review', 'completed', 'hold', 'canceled']
@@ -132,28 +136,155 @@ const operations = {
 }
 
 
-function signRequestBody(key, body) {
+function signRequestBody (key, body) {
   return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
 }
 
-function getAirtableRequestRecord (table, issueNumber) {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      const record = table.select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
-      resolve(record)
-    }, 3000)
+const getAirtableRequestRecord = async (table, issueNumber) => {
+  return await retry(async () => {
+    const record = await table.select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
+    return record
+  }, {
+    retries: 500
   })
 }
 
-function getAirtableStaffRecord (table, assignee) {
-   return table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
+const getAirtableStaffRecord = async (table, assignee) => {
+  return await retry(async () => {
+    const record = await table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
+    return record
+  }, {
+    retries: 500
+  })
 }
 
-module.exports = async function (req, res) {
+const createSlackGroup = (name) => {
+  console.log(name)
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.create(name,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          console.log(data)
+          resolve(data.group.id)
+        }
+      })
+  })
+}
+
+const inviteToSlackGroup = (groupID, userID) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.invite(groupID, userID,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          resolve(data)
+        }
+      })
+  })
+}
+
+const getSlackUserID = (name) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.users.list((err, data) => {
+      let userID = null
+      if (err) {
+        console.log(err)
+        reject(err)
+      } else {
+        for (const user of data.members) {
+          if (`@${user.name}` === name) {
+            userID = user.id
+            break
+          }
+        }
+        resolve(userID)
+      }
+    }, {
+      limit: 1000
+    })
+  })
+}
+
+const getSlackGroupID = (name) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.list((err, data) => {
+      let groupID = null
+      if (err) {
+        console.log(err)
+        reject(err)
+      } else {
+        for (const group of data.groups) {
+          if (group.name === name) {
+            groupID = group.id
+            break
+          }
+        }
+        resolve(groupID)
+      }
+    }, {
+      limit: 1000,
+      exclude_archived: true,
+      exclude_members: true
+    })
+  })
+}
+
+const getSlackTeamID = () => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.team.info((err, data) => {
+      if (err) reject(err)
+      resolve(data.team.id)
+    })
+  })
+}
+
+const getSlackProfile = (userID) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.users.info(userID,
+      (err, data) => {
+        if (err) reject(err)
+        resolve(data.user)
+    })
+  })
+}
+
+const retrieveSlackHistory = (groupID) => {
+  return new Promise((resolve, reject) => {
+    return slackWeb.groups.history(groupID,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          resolve(data.messages.filter((message) => message.type === 'message' && !message.subtype))
+        }
+      }, {
+        count: 1000
+      })
+  })
+}
+
+const joinArrayObject = (arr) => {
+  let str = ''
+  for (const item of arr) {
+    str += item + '\r\n'
+  }
+  return str
+}
+
+const handler = async (req, res) => {
+  // Return if not json body
+  if (req.headers['content-type'] !== 'application/json') {
+    return send(res, 500, { body: `Update webhook to send 'application/json' format`})
+  }
 
   try {
-    const payload = await json(req) 
-    const body = await text(req) 
+    const [payload, body] = await Promise.all([json(req), text(req)])
     const headers = req.headers
     const sig = headers['x-hub-signature']
     const githubEvent = headers['x-github-event']
@@ -211,10 +342,27 @@ module.exports = async function (req, res) {
     const requestView = view + requestRecordID
 
     if (action === 'opened') {
-
       // Add requestID and link to issue body
+      const assignee = payload.issue.assignee.login
       const requestBrief = payload.issue.body
-      await gh.editIssue(issueNumber, { body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}` })
+      const group = `studiojob-${issueNumber}`
+      let groupID = await getSlackGroupID(group)
+
+      await Promise.all([
+        gh.editIssue(issueNumber, {
+          body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}`
+        })
+      ])
+
+      const userID = await getSlackUserID(`@${assignee}`)
+
+      if (groupID) {
+        await inviteToSlackGroup(groupID, userID)
+      } else {
+        await createSlackGroup(group)
+        groupID = await getSlackGroupID(group)
+        await inviteToSlackGroup(groupID)
+      }
     }
 
     if (action === 'labeled') {
@@ -284,15 +432,38 @@ module.exports = async function (req, res) {
     }
     
     if (action === 'assigned') {
-
+      const group = `studiojob-${issueNumber}`
       const assignee = payload.issue.assignee.login
       const staffRecord = await getAirtableStaffRecord(base('staff'), assignee)
       const studioOwner = staffRecord[0]
 
       if (studioOwner) {
-
         const staffRecordID = studioOwner.getId()
-        await base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] })
+        const studioOwnerSlack = staffRecord[0].get('slack')
+        const groupID = await getSlackGroupID(group)
+        const userID = await getSlackUserID(`${studioOwnerSlack}`)
+        await Promise.all([
+          base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] }),
+          inviteToSlackGroup(groupID, userID)
+        ])
+      }
+    }
+
+    if (action === 'closed') {
+      const group = `studiojob-${issueNumber}`
+      const groupID = await getSlackGroupID(group)
+      // Dump Slack History in Github Issue
+      if (groupID) {
+        const teamID = await getSlackTeamID()
+        const history = await retrieveSlackHistory(groupID)
+        const messages = history.map(async (message) => {
+          const profile = await getSlackProfile(message.user)
+          return `**${profile.name}**: \r\n ${message.text}`
+        })
+        const groupHistory = await Promise.all(messages)
+        if (groupHistory.length >= 0) {
+          await gh.createIssueComment(issueNumber, `# [${group} history](https://slack.com/app_redirect?channel=${groupID}&&team=${teamID}) \r\n ${joinArrayObject(groupHistory)}`)
+        }
       }
     }
 
@@ -303,3 +474,5 @@ module.exports = async function (req, res) {
     send(res, 500, { body: `Error occurred: ${err}` })
   }
 }
+
+module.exports = handler
