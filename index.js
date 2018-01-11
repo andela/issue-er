@@ -145,7 +145,7 @@ const getAirtableRequestRecord = async (table, issueNumber) => {
     const record = await table.select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
     return record
   }, {
-    retries: 500
+    retries: 3
   })
 }
 
@@ -154,7 +154,7 @@ const getAirtableStaffRecord = async (table, assignee) => {
     const record = await table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
     return record
   }, {
-    retries: 500
+    retries: 3
   })
 }
 
@@ -348,11 +348,9 @@ const handler = async (req, res) => {
       const group = `studiojob-${issueNumber}`
       let groupID = await getSlackGroupID(group)
 
-      await Promise.all([
-        gh.editIssue(issueNumber, {
-          body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}`
-        })
-      ])
+      await gh.editIssue(issueNumber, {
+        body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}`
+      })
 
       const userID = await getSlackUserID(`@${assignee}`)
 
@@ -361,7 +359,11 @@ const handler = async (req, res) => {
       } else {
         await createSlackGroup(group)
         groupID = await getSlackGroupID(group)
-        await inviteToSlackGroup(groupID)
+        try {
+          await inviteToSlackGroup(groupID)
+        } catch (err) {
+          console.log(err)
+        }
       }
     }
 
@@ -377,11 +379,9 @@ const handler = async (req, res) => {
         projectName
       })
 
-      const findIssueID = client.request(operations.FindIssueID, variables)
+      const issue = await client.request(operations.FindIssueID, variables)
 
-      const findProjectColumnID = client.request(operations.FindProjectColumnID, variables)
-
-      const [issue, project] = await Promise.all([findIssueID, findProjectColumnID])
+      const project = await client.request(operations.FindProjectColumnID, variables)
 
       const contentId = issue.repository.issue.id
 
@@ -442,10 +442,8 @@ const handler = async (req, res) => {
         const studioOwnerSlack = staffRecord[0].get('slack')
         const groupID = await getSlackGroupID(group)
         const userID = await getSlackUserID(`${studioOwnerSlack}`)
-        await Promise.all([
-          base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] }),
-          inviteToSlackGroup(groupID, userID)
-        ])
+        await base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] })
+        await inviteToSlackGroup(groupID, userID)
       }
     }
 
