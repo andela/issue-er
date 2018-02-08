@@ -7,7 +7,9 @@ const { GraphQLClient } = require('graphql-request')
 const Airtable = require('airtable')
 const dateFormat = require('dateformat')
 const retry = require('async-retry')
-
+const sleep = require('await-sleep')
+const fetch = require('node-fetch')
+const queryString = require('query-string')
 // Env Variables
 const token = process.env.GH_TOKEN
 const secret = process.env.GH_WEBHOOK_SECRET
@@ -18,7 +20,7 @@ const airtableKey = process.env.AIRTABLE_API_KEY
 const airtableBase = process.env.AIRTABLE_BASE
 const view = process.env.AIRTABLE_VIEW_ENDPOINT
 const slackToken = process.env.SLACK_TOKEN
-
+const manager = process.env.MANAGER
 // Initialize GraphQLClient
 const client = new GraphQLClient(endpoint, {
   headers: {
@@ -36,6 +38,7 @@ const base = new Airtable({
 
 // Initialize Slack Token
 const slackWeb = new SlackWebClient(slackToken)
+const slackBot = new SlackWebClient(token)
 
 // Create query and mutation variable object
 const baseVariables = { owner, name }
@@ -141,20 +144,20 @@ function signRequestBody (key, body) {
 }
 
 const getAirtableRequestRecord = async (table, issueNumber) => {
-  return await retry(async () => {
+  return retry(async () => {
     const record = await table.select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
     return record
   }, {
-    retries: 3
+    retries: 100
   })
 }
 
 const getAirtableStaffRecord = async (table, assignee) => {
-  return await retry(async () => {
+  return retry(async () => {
     const record = await table.select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
     return record
   }, {
-    retries: 3
+    retries: 100
   })
 }
 
@@ -207,6 +210,35 @@ const getSlackUserID = (name) => {
     }, {
       limit: 1000
     })
+  })
+}
+
+const getSlackUserIDByEmail = (email) => {
+  return new Promise(async (resolve, reject) => {
+    const teamID = await getSlackTeamID()
+    const params = {
+      team: teamID,
+      slackToken,
+      email
+    }
+
+    return fetch(` https://slack.com/api/auth.findUser?${queryString.stringify(params)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        const { ok, user_id } = body
+        if (!ok) reject('User not found')
+        resolve(user_id)
+      })
+
+    // return slackWeb.users.lookupByEmail((err, res) => {
+    //   if (err) {
+    //     console.log(err)
+    //     reject(err)
+    //   } else {
+    //     const { id } =  res.user
+    //     if (id) resolve(id)
+    //   }
+    // })
   })
 }
 
@@ -336,7 +368,15 @@ const handler = async (req, res) => {
     }
 
     const issueNumber = payload.issue.number
-    const requestRecord = await getAirtableRequestRecord(base('request'), issueNumber)
+    let requestRecord
+    try {
+      requestRecord = await getAirtableRequestRecord(base('request'), issueNumber)
+    } catch(err) {
+      console.log(err)
+      await sleep(60000) // wait before retrying
+      requestRecord = await getAirtableRequestRecord(base('request'), issueNumber)
+    }
+      
     const requestRecordID = requestRecord[0].getId()
     const requestID = requestRecord[0].get('requestID')
     const requestView = view + requestRecordID
@@ -352,15 +392,19 @@ const handler = async (req, res) => {
         body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}`
       })
 
-      const userID = await getSlackUserID(`@${assignee}`)
+      const userID = await getSlackUserIDByEmail(manager)
+      const botID = await getSlackUserID(`@${assignee}`)
 
       if (groupID) {
+        // invite bot
+        await inviteToSlackGroup(groupID, botID)
         await inviteToSlackGroup(groupID, userID)
       } else {
         await createSlackGroup(group)
         groupID = await getSlackGroupID(group)
         try {
-          await inviteToSlackGroup(groupID)
+          await inviteToSlackGroup(groupID, botID)
+          await inviteToSlackGroup(groupID, userID)
         } catch (err) {
           console.log(err)
         }
@@ -439,11 +483,25 @@ const handler = async (req, res) => {
 
       if (studioOwner) {
         const staffRecordID = studioOwner.getId()
-        const studioOwnerSlack = staffRecord[0].get('slack')
-        const groupID = await getSlackGroupID(group)
-        const userID = await getSlackUserID(`${studioOwnerSlack}`)
-        await base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] })
-        await inviteToSlackGroup(groupID, userID)
+        const studioOwnerEmail = studioOwner.get('email')
+        let groupID
+        let userID
+        try {
+          groupID = await getSlackGroupID(group)
+          userID = await getSlackUserIDByEmail(`${studioOwnerEmail}`)
+        } catch (err) {
+          console.log(err)
+          groupID = await getSlackGroupID(group)
+          userID = await getSlackUserID(`${studioOwnerEmail}`)
+        }
+        try {
+          await Promise.all([
+            base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] }),
+            inviteToSlackGroup(groupID, userID)
+          ])
+        } catch (err) {
+          console.log(err)
+        }
       }
     }
 
@@ -460,7 +518,13 @@ const handler = async (req, res) => {
         })
         const groupHistory = await Promise.all(messages)
         if (groupHistory.length >= 0) {
-          await gh.createIssueComment(issueNumber, `# [${group} history](https://slack.com/app_redirect?channel=${groupID}&&team=${teamID}) \r\n ${joinArrayObject(groupHistory)}`)
+          try {
+            await Promise.all([
+              gh.createIssueComment(issueNumber, `# [${group} history](https://slack.com/app_redirect?channel=${groupID}&&team=${teamID}) \r\n ${joinArrayObject(groupHistory)}`)
+            ])
+          } catch(err) {
+            console.log(err)
+          }
         }
       }
     }
