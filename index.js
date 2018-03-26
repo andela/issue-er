@@ -10,6 +10,9 @@ const retry = require('async-retry')
 const sleep = require('await-sleep')
 const fetch = require('node-fetch')
 const queryString = require('query-string')
+
+const operations = require('./graphql/queries')
+
 // Env Variables
 const token = process.env.GH_TOKEN
 const secret = process.env.GH_WEBHOOK_SECRET
@@ -20,7 +23,8 @@ const airtableKey = process.env.AIRTABLE_API_KEY
 const airtableBase = process.env.AIRTABLE_BASE
 const view = process.env.AIRTABLE_VIEW_ENDPOINT
 const slackToken = process.env.SLACK_TOKEN
-const manager = process.env.MANAGER
+const managers = process.env.MANAGERS.split(',')
+
 // Initialize GraphQLClient
 const client = new GraphQLClient(endpoint, {
   headers: {
@@ -38,106 +42,12 @@ const base = new Airtable({
 
 // Initialize Slack Token
 const slackWeb = new SlackWebClient(slackToken)
-const slackBot = new SlackWebClient(token)
 
 // Create query and mutation variable object
 const baseVariables = { owner, name }
 
 // Issue status labels
 const statuses = ['incoming', 'accepted', 'in progress', 'rejected', 'blocked', 'review', 'completed', 'hold', 'canceled']
-
-// Grapql Operations: Queries & Mutations
-const operations = {
-  FindProjectColumnID: `
-    query FindProjectByName($owner: String!, $name: String!, $projectName: String!) {
-      repository(owner: $owner, name: $name) {
-        projects(first: 1, search: $projectName){
-          edges {
-            node {
-              columns(first:1) {
-                edges {
-                  node {
-                    id
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  `,
-  FindProjectColumnIDs: `
-    query FindProjectColumnIDs($owner:String!, $name:String!, $projectName:String!) {
-      repository(owner:$owner,name:$name) {
-        projects(first:1, search:$projectName){
-          edges {
-            node {
-              columns(first:7) {
-                totalCount
-                edges {
-                  node {
-                    id
-                    name
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  `,
-  FindIssueID: `
-     query FindIssueID($owner: String!, $name: String!, $issueNumber: Int!) {
-      repository(owner: $owner, name: $name) {
-        issue(number: $issueNumber) {
-          id
-        }
-      }
-    }
-  `,
-  AddProjectCard: `
-    mutation AddProjectCard($issue: AddProjectCardInput!) {
-      addProjectCard(input: $issue) {
-        cardEdge {
-          node {
-            id
-          }
-        }
-        projectColumn {
-          id
-        },
-        clientMutationId
-      }
-    }
-  `,
-  MoveProjectCard: `
-    mutation MoveProjectCard($card: MoveProjectCardInput!) {
-      moveProjectCard(input: $card) {
-        cardEdge {
-          node {
-            id
-          }
-        }
-        clientMutationId
-      }
-    }
-  `,
-  AddComment: `
-    mutation AddComment($issue: AddCommentInput!) {
-      addComment(input:$issue) {
-        commentEdge {
-          node {
-            id
-          }
-        }
-        clientMutationId
-      }
-    }
-  `
-}
-
 
 function signRequestBody (key, body) {
   return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
@@ -372,8 +282,7 @@ const handler = async (req, res) => {
     try {
       requestRecord = await getAirtableRequestRecord(base('request'), issueNumber)
     } catch(err) {
-      console.log(err)
-      await sleep(60000) // wait before retrying
+      await sleep(5000)
       requestRecord = await getAirtableRequestRecord(base('request'), issueNumber)
     }
       
@@ -392,22 +301,26 @@ const handler = async (req, res) => {
         body: `# Request ID: [${requestID}](${requestView}) \r\n ${requestBrief}`
       })
 
-      const userID = await getSlackUserIDByEmail(manager)
       const botID = await getSlackUserID(`@${assignee}`)
 
       if (groupID) {
-        // invite bot
-        await inviteToSlackGroup(groupID, botID)
-        await inviteToSlackGroup(groupID, userID)
+        await Promise.all([
+          ...managers.map(async (manager) => {
+            const userID = await getSlackUserIDByEmail(manager)
+            await inviteToSlackGroup(groupID, userID)
+          }),
+          inviteToSlackGroup(groupID, botID)
+        ])
       } else {
         await createSlackGroup(group)
         groupID = await getSlackGroupID(group)
-        try {
-          await inviteToSlackGroup(groupID, botID)
-          await inviteToSlackGroup(groupID, userID)
-        } catch (err) {
-          console.log(err)
-        }
+        await Promise.all([
+          ...managers.map(async (manager) => {
+            const userID = await getSlackUserIDByEmail(manager)
+            await inviteToSlackGroup(groupID, userID)
+          }),
+          inviteToSlackGroup(groupID, botID)
+        ])
       }
     }
 
@@ -484,24 +397,12 @@ const handler = async (req, res) => {
       if (studioOwner) {
         const staffRecordID = studioOwner.getId()
         const studioOwnerEmail = studioOwner.get('email')
-        let groupID
-        let userID
-        try {
-          groupID = await getSlackGroupID(group)
-          userID = await getSlackUserIDByEmail(`${studioOwnerEmail}`)
-        } catch (err) {
-          console.log(err)
-          groupID = await getSlackGroupID(group)
-          userID = await getSlackUserID(`${studioOwnerEmail}`)
-        }
-        try {
-          await Promise.all([
-            base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] }),
-            inviteToSlackGroup(groupID, userID)
-          ])
-        } catch (err) {
-          console.log(err)
-        }
+        const groupID = await getSlackGroupID(group)
+        const userID = await getSlackUserIDByEmail(`${studioOwnerEmail}`)
+        await Promise.all([
+          base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] }),
+          inviteToSlackGroup(groupID, userID)
+        ])
       }
     }
 
@@ -518,13 +419,9 @@ const handler = async (req, res) => {
         })
         const groupHistory = await Promise.all(messages)
         if (groupHistory.length >= 0) {
-          try {
-            await Promise.all([
-              gh.createIssueComment(issueNumber, `# [${group} history](https://slack.com/app_redirect?channel=${groupID}&&team=${teamID}) \r\n ${joinArrayObject(groupHistory)}`)
-            ])
-          } catch(err) {
-            console.log(err)
-          }
+          await Promise.all([
+            gh.createIssueComment(issueNumber, `# [${group} history](https://slack.com/app_redirect?channel=${groupID}&&team=${teamID}) \r\n ${joinArrayObject(groupHistory)}`)
+          ])
         }
       }
     }
