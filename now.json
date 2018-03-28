@@ -1,0 +1,9 @@
+{
+  "name": "issue-er",
+  "description": "GitHub issues manager",
+  "alias": "issue-er",
+  "dotenv": "true",
+  "dotenv": ".env",
+  "engines": "9.4.0",
+  "type": "docker"
+}
