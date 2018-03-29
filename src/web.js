@@ -5,9 +5,8 @@ const { json, send, text } = require('micro')
 const CronJob = require('cron').CronJob
 const moment = require('moment')
 
+const config = require('./config')
 const actions = require('./actions')
-
-const secret = process.env.GH_WEBHOOK_SECRET
 
 function signRequestBody (key, body) {
   return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
@@ -25,7 +24,7 @@ const handler = async (req, res) => {
     const sig = headers['x-hub-signature']
     const githubEvent = headers['x-github-event']
     const id = headers['x-github-delivery']
-    const calculatedSig = signRequestBody(secret, body)
+    const calculatedSig = signRequestBody(config.github.secret, body)
     const action = payload.action
     let errMessage
 

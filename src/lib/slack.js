@@ -2,7 +2,9 @@ const Slack = require('@slack/client').WebClient
 const fetch = require('node-fetch')
 const queryString = require('query-string')
 
-const token = process.env.SLACK_TOKEN
+const config = require('../config')
+
+const { token } = config.slack
 
 const client = new Slack(token)
 

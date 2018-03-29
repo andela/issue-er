@@ -1,15 +1,11 @@
 const { google } = require('googleapis')
 
-const clientId = process.env.GOOGLE_CLIENT_ID
-const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-const redirectURL = process.env.GOOGLE_REDIRECT_URL
+const config = require('../config')
+
+const { id, secret, redirectURL } = config.google
 
 const OAuth2 = google.auth.OAuth2
-const oauth2Client = new OAuth2(
-  clientId,
-  clientSecret,
-  redirectURL
-)
+const oauth2Client = new OAuth2(id, secret, redirectURL)
 
 const client = google.drive({
   version: 'v3',
@@ -28,6 +24,7 @@ const createFolder = (name) => {
     if (err) {
       console.log(err)
     }
+    console.log(res)
   })
 
 }
