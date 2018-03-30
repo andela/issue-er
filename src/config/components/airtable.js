@@ -5,7 +5,7 @@ const schema = joi.object({
   AIRTABLE_API_KEY: joi.string().required(),
   AIRTABLE_VIEW_ENDPOINT: joi.string().required()
 })
-  .unkown()
+  .unknown()
   .required()
 
 const { error, value: vars } = joi.validate(process.env, schema)

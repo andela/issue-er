@@ -5,7 +5,7 @@ const schema = joi.object({
   SLACK_TOKEN: joi.string().required(),
   SLACK_TEAM: joi.string().required()
 })
-  .unkown()
+  .unknown()
   .required()
 
 const { error, value: vars } = joi.validate(process.env, schema)

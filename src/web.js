@@ -71,20 +71,22 @@ const handler = async (req, res) => {
     }
 
     const now = moment()
-    const inFiveMinutes = now.add(5, 'minutes').toDate()
+    const inFiveMinutes = now.add(1, 'minutes')
 
     if (cluster.isMaster) {
 
       const job = new CronJob({
-        cronTime: inFiveMinutes,
+        cronTime: inFiveMinutes.toDate(),
         onTick: actions[action](payload),
-        start: false
+        start: false,
+        timeZone: 'America/New_York'
       })
 
       job.start()
+      console.log(`...scheduling '${action}' job for issue: ${payload.issue.number} will run in ${inFiveMinutes.calendar()}`)
     }
 
-    return send(res, 200, { body: `Processing action: '${action}'` })
+    return send(res, 200, { body: `Scheduled job: '${action}'` })
 
   } catch(err) {
     console.log(err)

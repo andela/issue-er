@@ -1,7 +1,6 @@
 if (process.env.NODE_ENV === 'development') {
-  required('dotenv').config({ silent: true })
+  require('dotenv').config({ silent: true })
 }
-
 const server = require('./components/server')
 const airtable = require('./components/airtable')
 const google = require('./components/google')

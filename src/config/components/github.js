@@ -7,7 +7,7 @@ const schema = joi.object({
   GH_REPOSITORY: joi.string().required(),
   GH_ENDPOINT: joi.string().required(),
 })
-  .unkown()
+  .unknown()
   .required()
 
 const { error, value: vars } = joi.validate(process.env, schema)

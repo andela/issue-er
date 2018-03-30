@@ -1,6 +1,11 @@
 const dateFormat = require('dateformat')
 
-const config = require('../config')
+const {
+  createFolder,
+  findFolder,
+  getFolder,
+  workspace
+} = require('../lib/google')
 
 const {
   issues,
@@ -25,16 +30,16 @@ const {
   retrieveSlackHistory
 } = require('../lib/slack')
 
-const { owner, repo } = config.github
+const config = require('../config')
 
+const { managers, namespace } = config.team
+const { owner, repo } = config.github
 const { view } = config.airtable
-const { managers } = config.team
 
 const operations = require('../graphql/queries')
 
 // Create query and mutation variable object
 const baseVariables = { owner, name: repo }
-
 
 function joinArrayObject (array) {
   let str = ''
@@ -44,21 +49,98 @@ function joinArrayObject (array) {
   return str
 }
 
+const updateStatus = async (record, status) => {
+  if (!record) return
+  if (!status) return
+
+  const recordId = record.getId()
+  const jobStatus = record.get('jobStatus')
+  const today = dateFormat(new Date(), 'isoDate')
+
+  if (status !== jobStatus) {
+    await base('request').update(recordId, { 'jobStatus': status })
+  }
+
+  if (status === 'accepted') {
+    await base('request').update(recordId, { 'startDate': today })
+  }
+
+  if (status === 'completed') {
+    await base('request').update(recordId, { 'dateDelivered': today })
+  }
+}
+
+const updateCategory = async (record, category) => {
+  if (!record) return
+  if (!category) return
+
+  const recordId = record.getId()
+  const jobCategory = record.get('jobCategory')
+  if (category !== jobCategory) {
+    await base('request').update(recordId, { 'jobCategory': category })
+  }
+}
+
+const addToProject = async (project, issue, variables) => {
+  if (!project) return
+  if (!issue) return
+  if (!variables) return
+
+  const { repository: { issue: { id } } } = issue
+  const projectColumnId = project.repository.projects.edges[0].node.columns.edges[0].node.id
+  if (id && projectColumnId) {
+    const projectCardMutationVariables = Object.assign({}, variables, {
+      "issue": { id, projectColumnId }
+    })
+    await graphqlClient.request(operations.AddProjectCard, projectCardMutationVariables)
+  }
+}
+
+const moveProjectcard = async (issue, variables) => {
+  if (!issue) return
+  if (!variables) return
+
+  const { repository: { issue: { projectCards } } }  = issue
+  projectCards.forEach(async (card) => {
+    const { edges: { node: { id: cardId, column: columnId } } } = card
+    const projectCardMutationVariables = Object.assign({}, variables, {
+      "card": { cardId, columnId }
+    })
+    await graphqlClient.request(operations.MoveProjectCard, projectCardMutationVariables)
+  })
+}
+
 const opened = async (payload) => {
   const { issue: { number, body, assignee: { login } } } = payload
-  const requestRecord = await getAirtableRequestRecord('request', number)
-  const requestRecordID = requestRecord[0].getId()
-  const requestID = requestRecord[0].get('requestID')
-  const requestView = view + requestRecordID
+  const res = await getAirtableRequestRecord('request', number)
+  const record = res[0]
+  const recordId = record.getId()
+  const depId = record.get('departmentID')
+  const depName = record.get('departmentName')
+  const requestId = record.get('requestID')
+  const requestTitle = record.get('title')
+  const requestView = view + recordId
 
-  // Add requestID and link to issue body
-  const group = `studiojob-${number}`
+  // const cwd = await workspace()
+  //
+  // const depDirName = `${depId} (${depName})`
+  // const requestDirName = `${requestId} (${requestTitle})`
+  //
+  // const depDir = await createFolder(depDirName, [cwd.id])
+  // const requestDir = await createFolder(requestDirName, [depDir.id])
+  //
+  // const { url } = config.google
+
+  const group = `${namespace}-${number}`
   let groupID = await getSlackGroupID(group)
 
   await issues.editIssue(number, {
-    body: `# Request ID: [${requestID}](${requestView}) \r\n ${body}`
+    body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ${body}`
   })
-
+  // await issues.editIssue(number, {
+  //   body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n # [GDrive: ${requestDir.name}](${url}/${requestDir.id}) \r\n ${body}`
+  // })
+  
   const botID = await getSlackUserID(`@${login}`)
 
   if (groupID) {
@@ -85,63 +167,53 @@ const opened = async (payload) => {
 const labeled = async (payload) => {
   const { issue: { number, labels }, label: { name } } = payload
 
-  const requestRecord = await getAirtableRequestRecord('request', number)
-  const requestRecordID = requestRecord[0].getId()
+  const record = await getAirtableRequestRecord('request', number)
 
-  const status = name
   const projectName = name === 'incoming' ? 'All Projects' : name
-  const requestJobStatus = requestRecord[0].get('jobStatus')
-  const requestJobCategory = requestRecord[0].get('jobCategory')
 
-  // Add issue to project board
   const variables =  Object.assign({}, baseVariables, {
     number,
     projectName
   })
 
-    const issue = await graphqlClient.request(operations.FindIssueID, variables)
+  const issue = await graphqlClient.request(operations.FindIssue, variables)
+  const project = await graphqlClient.request(operations.FindProject, variables)
 
-    const project = await graphqlClient.request(operations.FindProjectColumnID, variables)
+  const issueLabels = issue.repository.issue.labels
 
-    const contentId = issue.repository.issue.id
+  issueLabels.forEach(async (label) => {
+    const { edges: { node: { name, description } } } = label
 
-    if (project.repository.projects.edges.length === 1 && payload.sender.login === 'studiobot' ) {
-      const projectColumnId = project.repository.projects.edges[0].node.columns.edges[0].node.id
-      if (contentId && projectColumnId) {
-        const projectCardMutationVariables = Object.assign({}, variables, {
-          "issue": { contentId, projectColumnId }
-        })
-        await graphqlClient.request(operations.AddProjectCard, projectCardMutationVariables)
-      }
+    switch(description) {
+      case 'department':
+        await addToProject(project, issue, variables)
+        break
+      case 'status':
+        await Promise.all([
+          updateStatus(record[0], name),
+          moveProjectcard(issue, variables)
+        ])
+        break
+      case 'category':
+        await updateCategory(record[0], name)
+        break
+      default:
+        console.log('No matching label description')
     }
 
-    // Update airtable jobStatus field with label if airtable record exists &&
-    // Label status is in statuses && record status is not the same as label name
-    if (requestRecordID && statuses.includes(status) && status !== requestJobStatus) {
-      await base('request').update(requestRecordID, { 'jobStatus': status })
-      const today = dateFormat(new Date(), 'isoDate')
+  })
 
-      if (status === 'accepted') {
-        await base('request').update(requestRecordID, { 'startDate': today })
-      }
+  const expediteReq = record[0].get('expedite')
+  const expediteLabel = 'expedite'
 
-      if (status === 'completed') {
-        await base('request').update(requestRecordID, { 'dateDelivered': today })
-      }
-    }
+  // Add 'expedite' label to issue is expedite requested
+  if (expediteReq && name !== expediteLabel && !labels.includes(expediteLabel)) {
 
+    const currentLabels = labels.map((label) => label.name)
+    const newLabels = [expediteLabel, ...currentLabels]
 
-    const expediteReq = requestRecord[0].get('expedite')
-    const expediteLabel = 'expedite'
-
-    // Add 'expedite' label to issue is expedite requested
-    if (expediteReq && name !== expediteLabel && !labels.includes(expediteLabel)) {
-
-      const currentLabels = labels.map((label) => label.name)
-      const newLabels = [expediteLabel, ...currentLabels]
-
-      await issues.editIssue(number, { labels: newLabels })
-    }
+    await issues.editIssue(number, { labels: newLabels })
+  }
 }
 
 const assigned = async (payload) => {
@@ -149,18 +221,18 @@ const assigned = async (payload) => {
   const requestRecord = await getAirtableRequestRecord('request', number)
   const requestRecordID = requestRecord[0].getId()
 
-  const group = `studiojob-${number}`
+  const group = `${namespace}-${number}`
   const assignee = payload.issue.assignee.login
   const staffRecord = await getAirtableStaffRecord('staff', assignee)
-  const studioOwner = staffRecord[0]
+  const owner = staffRecord[0]
 
-  if (studioOwner) {
-    const staffRecordID = studioOwner.getId()
-    const studioOwnerEmail = studioOwner.get('email')
+  if (owner) {
+    const staffRecordID = owner.getId()
+    const ownerEmail = owner.get('email')
     const groupID = await getSlackGroupID(group)
-    const userID = await getSlackUserIDByEmail(`${studioOwnerEmail}`)
+    const userID = await getSlackUserIDByEmail(`${ownerEmail}`)
     await Promise.all([
-      base('request').update(requestRecordID, { 'studioOwner': [`${staffRecordID}`] }),
+      base('request').update(requestRecordID, { 'owner': [`${staffRecordID}`] }),
       inviteToSlackGroup(groupID, userID)
     ])
   }
@@ -169,7 +241,7 @@ const assigned = async (payload) => {
 const closed = async (payload) => {
   const { issue: { number } } = payload
 
-  const group = `studiojob-${number}`
+  const group = `${namespace}-${number}`
   const groupID = await getSlackGroupID(group)
   // Dump Slack History in Github Issue
   if (groupID) {

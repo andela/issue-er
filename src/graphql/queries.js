@@ -1,14 +1,25 @@
 module.exports = {
-  FindProjectColumnID: `
-    query FindProjectByName($owner: String!, $name: String!, $projectName: String!) {
+  FindProject: `
+    query FindProject($owner: String!, $name: String!, $projectName: String!) {
       repository(owner: $owner, name: $name) {
         projects(first: 1, search: $projectName){
           edges {
             node {
-              columns(first:1) {
-                edges {
-                  node {
-                    id
+            columns(first:1) {
+              edges{
+                node {
+                  id
+                  name
+                  cards(first: 20) {
+                    edges {
+                      node{
+                        id
+                        content
+                        column {
+                          id
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -18,13 +29,13 @@ module.exports = {
       }
     }
   `,
-  FindProjectColumnIDs: `
-    query FindProjectColumnIDs($owner:String!, $name:String!, $projectName:String!) {
+  FindProjectColumns: `
+    query FindProjectColumns($owner:String!, $name:String!, $projectName:String!) {
       repository(owner:$owner,name:$name) {
         projects(first:1, search:$projectName){
           edges {
             node {
-              columns(first:7) {
+              columns(first: 20) {
                 totalCount
                 edges {
                   node {
@@ -39,11 +50,36 @@ module.exports = {
       }
     }
   `,
-  FindIssueID: `
-     query FindIssueID($owner: String!, $name: String!, $issueNumber: Int!) {
-      repository(owner: $owner, name: $name) {
-        issue(number: $issueNumber) {
+  FindIssue: `
+    query FindIssue($owner: String!, $name: String!) {
+      repository(owner:$owner, name:$name) {
+        issue(number:161) {
           id
+          title
+          projectCards(first: 20) {
+            edges {
+              node {
+                id
+                project {
+                  id
+                  name
+                }
+                column {
+                  id
+                  name
+                }
+              }
+            }
+          }
+          labels(first: 20) {
+            edges {
+              node {
+                id
+                name
+                description
+              }
+            }
+          }
         }
       }
     }

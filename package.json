@@ -4,8 +4,8 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "start": "micro src/index.js",
-    "dev": "micro-dev src/index.js",
+    "start": "micro src/web.js",
+    "dev": ". ./env.sh && micro-dev src/web.js",
     "precommit": "lint-staged",
     "lint": "xo",
     "predeploy": "cat .env | while read line; do export $line; done",
@@ -44,6 +44,7 @@
     "googleapis": "^27.0.0",
     "graphql-request": "^1.3.6",
     "joi": "^13.1.2",
+    "jsonfile": "^4.0.0",
     "micro": "^9.0.0",
     "micro-cors": "^0.0.4",
     "moment": "^2.21.0",
