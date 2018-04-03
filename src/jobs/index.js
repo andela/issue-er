@@ -1,6 +1,8 @@
 const CronJob = require('cron').CronJob
 const moment = require('moment')
 
+const { graphqlClient } = require('../lib/github')
+
 const config = require('../config')
 
 const { managers, namespace } = config.team
@@ -44,7 +46,7 @@ const clearOld = new CronJob({
     console.log(`Removing all cards from 'All Projects' created on: ${twoWeeksAgo}`)
     // Clear out issues on 'All Projects' older than 14 days
   },
-  start: false,
+  start: true,
   timezone: 'America/New_York'
 })
 

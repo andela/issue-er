@@ -1,9 +1,8 @@
 {
-  "apps": [
-    {
+  "apps": [{
     "name": "web",
-    "script": "src/web.js",
-    "instances": "0",
+    "script": "src/web",
+    "instances": "1",
     "exec_mode": "cluster",
     "env": {
       "NODE_ENV": "development"
@@ -13,9 +12,9 @@
     }
   },
   {
-    "name":"worker",
-    "script": "src/worker.js",
-    "instance": 1,
+    "name": "worker",
+    "script": "src/worker",
+    "instances": "1",
     "exec_mode": "cluster",
     "env": {
       "NODE_ENV": "development"

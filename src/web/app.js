@@ -1,17 +1,16 @@
-const cluster = require('cluster')
 const crypto = require('crypto')
 const { json, send, text } = require('micro')
 const CronJob = require('cron').CronJob
 const moment = require('moment')
 
-const config = require('./config')
-const actions = require('./actions')
+const config = require('../config')
+const actions = require('../actions')
 
 function signRequestBody (key, body) {
   return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
 }
 
-const handler = async (req, res) => {
+module.exports = async (req, res) => {
   // Return if not json body
   if (req.headers['content-type'] !== 'application/json') {
     return send(res, 500, { body: `Update webhook to send 'application/json' format`})
@@ -70,27 +69,25 @@ const handler = async (req, res) => {
     }
 
     const now = moment()
-    const inFiveMinutes = now.add(1, 'minutes')
+    const inTenMinutes = now.clone().add(10, 'minutes')
+    const inOneMinute = now.clone().add(1, 'minute')
 
-    if (cluster.isMaster) {
+    const job = new CronJob({
+      cronTime: (action === 'opened' || action === 'closed')
+      ? inTenMinutes.toDate()
+      : inOneMinute.toDate(),
+      onTick: actions[action](payload),
+      start: false,
+      timeZone: 'America/New_York'
+    })
 
-      const job = new CronJob({
-        cronTime: inFiveMinutes.toDate(),
-        onTick: actions[action](payload),
-        start: false,
-        timeZone: 'America/New_York'
-      })
+    job.start()
 
-      job.start()
-      console.log(`...scheduling '${action}' job for issue: ${payload.issue.number} will run in ${inFiveMinutes.calendar()}`)
-    }
-
-    return send(res, 200, { body: `Scheduled job: '${action}'` })
-
+    return send(res, 200, {
+      body: `Scheduled '${action}' job for issue: '${payload.issue.number}'`
+    })
   } catch(err) {
     console.log(err)
     send(res, 500, { body: `Error occurred: ${err}` })
   }
 }
-
-module.exports = handler

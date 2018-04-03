@@ -1,11 +1,10 @@
 {
   "name": "andela-studio-issue-er",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/index.js",
   "license": "MIT",
   "scripts": {
-    "dev": "micro-dev src/web.js",
-    "start": "micro src/web.js",
+    "dev": "NODE_ENV=development nodemon src/web",
     "precommit": "lint-staged",
     "lint": "xo",
     "deploy": "now && now alias"
@@ -31,7 +30,6 @@
   "dependencies": {
     "@slack/client": "^3.14.2",
     "airtable": "^0.5.0",
-    "async": "^2.6.0",
     "async-retry": "^1.1.4",
     "await-sleep": "^0.0.1",
     "cron": "^1.3.0",
@@ -51,9 +49,11 @@
     "verify-github-webhook": "^1.0.1"
   },
   "devDependencies": {
+    "dotenv-safe": "^5.0.1",
     "eslint-config-prettier": "^2.6.0",
     "eslint-plugin-prettier": "^2.3.1",
     "micro-dev": "^2.1.0",
+    "nodemon": "^1.17.3",
     "prettier": "^1.7.3",
     "xo": "^0.18.2"
   }

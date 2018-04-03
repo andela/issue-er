@@ -81,6 +81,31 @@ const updateStatus = async (record, status) => {
   }
 }
 
+const updatePriority = async (record, labels, priority, number) => {
+  if (!record) return
+  if (!labels || labels.length === 0) return
+  if (!priority) return
+  if (!number) return
+
+  const expediteLabel = 'expedite'
+  const expediteReq = record.get('expedite')
+
+  const recordId = record.getId()
+  const jobPriority = record.get('priority')
+
+  if (priority !== jobPriority) {
+    await base('request').update(recordId, { priority })
+  }
+
+  if (expediteReq && !labels.includes(expediteLabel)) {
+    if (priority !== expediteLabel) {
+      const currentLabels = labels.map((label) => label.name)
+      const newLabels = [expediteLabel, ...currentLabels]
+      await issues.editIssue(number, { labels: newLabels })
+    }
+  }
+}
+
 const updateCategory = async (record, category) => {
   if (!record) return
   if (!category) return
@@ -207,18 +232,6 @@ const labeled = async (payload) => {
   const issueLabels = issue.repository.issue.labels.edges
     .filter((label) => label.node.name === name)
 
-  const expediteReq = record[0].get('expedite')
-  const expediteLabel = 'expedite'
-
-  // Add 'expedite' label to issue is expedite requested
-  if (expediteReq && name !== expediteLabel && !labels.includes(expediteLabel)) {
-
-    const currentLabels = labels.map((label) => label.name)
-    const newLabels = [expediteLabel, ...currentLabels]
-
-    await issues.editIssue(number, { labels: newLabels })
-  }
-
   asyncForEach(issueLabels, async (label) => {
     const { node: { name, description } } = label
     try {
@@ -231,6 +244,9 @@ const labeled = async (payload) => {
             updateStatus(record[0], name),
             moveProjectCard(name, issue, variables)
           ])
+          break
+        case 'priority':
+          await updatePriority(record[0], labels, name, number)
           break
         case 'category':
           await updateCategory(record[0], name)
