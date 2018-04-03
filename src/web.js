@@ -1,4 +1,3 @@
-require('dotenv-safe').load()
 const cluster = require('cluster')
 const crypto = require('crypto')
 const { json, send, text } = require('micro')

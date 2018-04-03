@@ -40,6 +40,51 @@ function archiveSlackGroup (name) {
   })
 }
 
+function unarchiveSlackGroup (name) {
+  return new Promise((resolve, reject) => {
+    return getSlackGroupID(name).then((id) => {
+      return client.groups.unarchive(id,
+        (err, res) => {
+          if (err) {
+            console.log(err)
+            reject(err)
+          } else {
+            console.log(res)
+            resolve(res)
+          }
+        })
+    })
+  })
+}
+
+function setSlackGroupPurpose (groupID, purpose=``) {
+  return new Promise((resolve, reject) => {
+    return client.groups.setPurpose(groupID, purpose,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          resolve(data)
+        }
+      })
+  })
+}
+
+function setSlackGroupTopic (groupID, topic=``) {
+  return new Promise((resolve, reject) => {
+    return client.groups.setTopic(groupID, topic,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          resolve(data)
+        }
+      })
+  })
+}
+
 function inviteToSlackGroup (groupID, userID) {
   return new Promise((resolve, reject) => {
     return client.groups.invite(groupID, userID,
@@ -53,6 +98,21 @@ function inviteToSlackGroup (groupID, userID) {
       })
   })
 }
+
+function postMessageToSlack (id, text=``) {
+  return new Promise((resolve, reject) => {
+    return client.chat.postMessage(id, text,
+      (err, data) => {
+        if (err) {
+          console.log(err)
+          reject(err)
+        } else {
+          resolve(data)
+        }
+      })
+  })
+}
+
 
 function getSlackUserID (name) {
   return new Promise((resolve, reject) => {
@@ -157,11 +217,15 @@ module.exports = {
   client,
   createSlackGroup,
   archiveSlackGroup,
+  unarchiveSlackGroup,
   inviteToSlackGroup,
   getSlackUserIDByEmail,
   getSlackUserID,
   getSlackGroupID,
   getSlackTeamID,
   getSlackProfile,
+  setSlackGroupTopic,
+  setSlackGroupPurpose,
+  postMessageToSlack,
   retrieveSlackHistory
 }

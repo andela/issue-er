@@ -1,5 +1,5 @@
 const jobs = require('./jobs')
 
 module.exports = () => {
-  Object.keys(jobs).forEach(job => jobs[job].start())
+  Object.keys(jobs).map(async job => jobs[job].start())
 }

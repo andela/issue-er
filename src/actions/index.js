@@ -2,8 +2,6 @@ const dateFormat = require('dateformat')
 
 const {
   createFolder,
-  findFolder,
-  getFolder,
   workspace
 } = require('../lib/google')
 
@@ -21,12 +19,16 @@ const {
 const {
   createSlackGroup,
   archiveSlackGroup,
+  unarchiveSlackGroup,
   inviteToSlackGroup,
   getSlackUserIDByEmail,
   getSlackUserID,
   getSlackGroupID,
   getSlackTeamID,
   getSlackProfile,
+  setSlackGroupTopic,
+  setSlackGroupPurpose,
+  postMessageToSlack,
   retrieveSlackHistory
 } = require('../lib/slack')
 
@@ -40,6 +42,15 @@ const operations = require('../graphql/queries')
 
 // Create query and mutation variable object
 const baseVariables = { owner, name: repo }
+
+// !This is temporary solution!
+// forEach polyfill
+// https://codeburst.io/javascript-async-await-with-foreach-b6ba62bbf404
+async function asyncForEach(array, callback) {
+  for (let index = 0; index < array.length; index++) {
+    await callback(array[index], index, array)
+  }
+}
 
 function joinArrayObject (array) {
   let str = ''
@@ -82,31 +93,46 @@ const updateCategory = async (record, category) => {
 }
 
 const addToProject = async (project, issue, variables) => {
-  if (!project) return
+  if (!project || project.repository.projects.edges.length === 0) return
   if (!issue) return
   if (!variables) return
 
-  const { repository: { issue: { id } } } = issue
-  const projectColumnId = project.repository.projects.edges[0].node.columns.edges[0].node.id
-  if (id && projectColumnId) {
+  const { repository: { issue: { id: contentId } } } = issue
+  const projectColumnId = project.repository.projects.edges[0].node.columns.edges[0].node.id || null
+  if (contentId && projectColumnId) {
     const projectCardMutationVariables = Object.assign({}, variables, {
-      "issue": { id, projectColumnId }
+      "issue": { contentId, projectColumnId }
     })
     await graphqlClient.request(operations.AddProjectCard, projectCardMutationVariables)
   }
 }
 
-const moveProjectcard = async (issue, variables) => {
+const moveProjectCard = async (destinationColumnName, issue, variables) => {
+  if (!destinationColumnName) return
   if (!issue) return
   if (!variables) return
 
   const { repository: { issue: { projectCards } } }  = issue
-  projectCards.forEach(async (card) => {
-    const { edges: { node: { id: cardId, column: columnId } } } = card
-    const projectCardMutationVariables = Object.assign({}, variables, {
-      "card": { cardId, columnId }
+
+  asyncForEach(projectCards.edges, async ({ node: {
+    id: cardId,
+    project: { name: projectName },
+    column: { id: currentColumnId, name: currentColumnName } } }) => {
+    const project = await graphqlClient.request(operations.FindProjectColumns,
+      Object.assign({}, variables, { projectName })
+    )
+    const { repository: { projects: { edges } } } = project
+    asyncForEach(edges, async ({ node: { columns: { edges } } }) => {
+      asyncForEach(edges, async ({ node: { id: columnId, name: columnName } }) => {
+        if (columnId === currentColumnId) return
+        if (columnName.toLowerCase() === currentColumnName.toLowerCase()) return
+        if (columnName.toLowerCase() !== destinationColumnName.toLowerCase()) return
+        const projectCardMutationVariables = Object.assign({}, variables, {
+          "card": { cardId, columnId }
+        })
+        await graphqlClient.request(operations.MoveProjectCard, projectCardMutationVariables)
+      })
     })
-    await graphqlClient.request(operations.MoveProjectCard, projectCardMutationVariables)
   })
 }
 
@@ -115,32 +141,29 @@ const opened = async (payload) => {
   const res = await getAirtableRequestRecord('request', number)
   const record = res[0]
   const recordId = record.getId()
-  const depId = record.get('departmentID')
-  const depName = record.get('departmentName')
+  const depId = record.get('departmentID')[0]
+  const depName = record.get('departmentName')[0]
   const requestId = record.get('requestID')
   const requestTitle = record.get('title')
   const requestView = view + recordId
 
-  // const cwd = await workspace()
-  //
-  // const depDirName = `${depId} (${depName})`
-  // const requestDirName = `${requestId} (${requestTitle})`
-  //
-  // const depDir = await createFolder(depDirName, [cwd.id])
-  // const requestDir = await createFolder(requestDirName, [depDir.id])
-  //
-  // const { url } = config.google
+  const cwd = await workspace()
+
+  const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
+  const requestFolderName = `${requestId} (${requestTitle})`
+
+  const depFolder = await createFolder(depFolderName, [cwd.id])
+  const requestFolder = await createFolder(requestFolderName, [depFolder.id])
+
+  const { url } = config.google
 
   const group = `${namespace}-${number}`
   let groupID = await getSlackGroupID(group)
 
   await issues.editIssue(number, {
-    body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ${body}`
+    body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [GDrive Assets repository: ${depFolder.name}](${url}/${requestFolder.id}) \r\n ${body}`
   })
-  // await issues.editIssue(number, {
-  //   body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n # [GDrive: ${requestDir.name}](${url}/${requestDir.id}) \r\n ${body}`
-  // })
-  
+
   const botID = await getSlackUserID(`@${login}`)
 
   if (groupID) {
@@ -176,32 +199,13 @@ const labeled = async (payload) => {
     projectName
   })
 
-  const issue = await graphqlClient.request(operations.FindIssue, variables)
-  const project = await graphqlClient.request(operations.FindProject, variables)
+  const [issue, project] = await Promise.all([
+    graphqlClient.request(operations.FindIssue, variables),
+    graphqlClient.request(operations.FindProject, variables)
+  ])
 
-  const issueLabels = issue.repository.issue.labels
-
-  issueLabels.forEach(async (label) => {
-    const { edges: { node: { name, description } } } = label
-
-    switch(description) {
-      case 'department':
-        await addToProject(project, issue, variables)
-        break
-      case 'status':
-        await Promise.all([
-          updateStatus(record[0], name),
-          moveProjectcard(issue, variables)
-        ])
-        break
-      case 'category':
-        await updateCategory(record[0], name)
-        break
-      default:
-        console.log('No matching label description')
-    }
-
-  })
+  const issueLabels = issue.repository.issue.labels.edges
+    .filter((label) => label.node.name === name)
 
   const expediteReq = record[0].get('expedite')
   const expediteLabel = 'expedite'
@@ -214,6 +218,31 @@ const labeled = async (payload) => {
 
     await issues.editIssue(number, { labels: newLabels })
   }
+
+  asyncForEach(issueLabels, async (label) => {
+    const { node: { name, description } } = label
+    try {
+      switch(description) {
+        case 'department':
+          await addToProject(project, issue, variables)
+          break
+        case 'status':
+          await Promise.all([
+            updateStatus(record[0], name),
+            moveProjectCard(name, issue, variables)
+          ])
+          break
+        case 'category':
+          await updateCategory(record[0], name)
+          break
+        default:
+          console.log('No matching label description')
+      }
+    } catch(err) {
+      console.log(err)
+    }
+  })
+
 }
 
 const assigned = async (payload) => {

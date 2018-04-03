@@ -1,37 +1,42 @@
+const fs = require('fs')
 const { google } = require('googleapis')
+
 const jsonfile = require('jsonfile')
 
 const config = require('../config')
 
-const { secret, workDir } = config.google
+const { secret, scopes, workDir } = config.google
 
-const file = '/tmp/secret.json'
-jsonfile.writeFileSync(file, secret, { spaces: 2 })
+/**
+ * Create secret.json file with keys
+ */
+// const keyPath = '/tmp/jwt.keys.json'
+// jsonfile.writeFileSync(keyPath, secret, { spaces: 2 })
+// let keys = {}
+// if (fs.existsSync(keyPath)) keys = require(keyPath)
 
-const OAuth2 = google.auth.OAuth2
-const oauth2Client = new OAuth2(file)
+const jwtClient = new google.auth.JWT({
+  email: secret.client_email,
+  key: secret.private_key,
+  scopes,
+})
 
 const drive = google.drive({
   version: 'v3',
-  auth: oauth2Client
+  auth: jwtClient
 })
 
-const MIME_TYPE='application/vnd.google-apps.folder'
+const MIME_TYPE = "application/vnd.google-apps.folder"
 
 function workspace () {
   return new Promise((resolve, reject) => {
-    findFolder(workDir)
-      .then(async (res) => {
-        let ws
-        if (Object.keys(res).length === 0) {
-          ws = await createFolder(workDir)
-        }
-        return resolve(res || ws)
-      })
-      .catch(err => {
-        console.log(err)
-        return reject(err)
-      })
+    return findFolder(workDir)
+      .then(folder => {
+        if (folder) return resolve(folder)
+        return createFolder(workDir)
+          .then(({ data }) => resolve(data))
+          .catch(err => reject(err))
+      }).catch(err => reject(err))
   })
 }
 
@@ -48,34 +53,28 @@ function findFolder (name) {
   params.q = `mimeType='${MIME_TYPE}' and name contains '${name}'`
 
   return new Promise((resolve, reject) => {
-    return drive.files.list(params, (err, res) => {
-      if (err) return reject(err)
-      if (!res) return null
-      return getFolder(res.files[0].id)
-        .then((res) => {
-          return resolve(res)
-        })
-        .catch((err) => {
-          console.log(err)
-          return reject(err)
-        })
-    })
+    return drive.files.list(params)
+      .then(({ data: { files } }) => {
+        const file = files.filter((file) => file.name.toLowerCase() === name.toLowerCase())[0]
+        if (!file || file === 'undefined')  return resolve(null)
+        return getFolder(file)
+          .then(res => resolve(res.data))
+          .catch(err => reject(err))
+      }).catch(err => reject(err))
   })
 }
 
-function getFolder (fileId) {
-  if (!fileId) return
-
+function getFolder (file) {
+  if (!file.id) throw new Error(`Must specify an 'id' property`)
   const params = {
-    fileId,
+    fileId: file.id,
     supportsTeamDrives: true,
     fields: `id, name, parents`
   }
   return new Promise((resolve, reject) => {
-    drive.files.get(params, (err, res) => {
-      if (err) return reject(err)
-      return resolve(res)
-    })
+    return drive.files.get(params)
+      .then(file => resolve(file))
+      .catch(err => reject(err))
   })
 }
 
@@ -83,30 +82,35 @@ function createFolder (name, parents=[]) {
   if (!name) return
   return new Promise((resolve, reject) => {
     return findFolder(name)
-      .then((res) => {
-        if (res.id && Object.keys(res) !== 0) return resolve(res)
-        const fileMetadata = {
+      .then((folder) => {
+        if (folder) return resolve(folder)
+        const resource = {
           name,
           parents,
           mimeType: MIME_TYPE,
+        }
+        const params = {
+          supportsTeamDrives: true,
           fields: `id, name`
         }
-        drive.files.insert({
-          resource: fileMetadata
-        }, (err, res) => {
-          if (err) return reject(err)
-          console.log(res)
-          return resolve(res)
+        return drive.files.create({
+          resource,
+          ...params
         })
+          .then(({ data: { id, name } }) => {
+            return resolve({ id, name })
+          })
+          .catch(err => reject(err))
       })
       .catch(err => {
         console.log(err)
+        return reject(err)
       })
-
   })
 }
 
 module.exports = {
+  client: jwtClient,
   createFolder,
   findFolder,
   getFolder,

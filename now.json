@@ -1,7 +1,7 @@
 {
-  "name": "issue-er",
+  "name": "andela-studio-issue-er",
   "description": "GitHub issues manager",
-  "alias": "issue-er",
+  "alias": "andela-studio-issue-er",
   "dotenv": "true",
   "dotenv": ".env",
   "engines": "9.4.0",

@@ -13,7 +13,8 @@ const schema = joi.object({
   GS_AUTH_URL: joi.string().required(),
   GS_TOKEN_URL: joi.string().required(),
   GS_AUTH_PROVIDER: joi.string().required(),
-  GS_CERT_URL: joi.string().required()
+  GS_CERT_URL: joi.string().required(),
+  GS_SCOPES: joi.string().required()
 })
   .unknown()
   .required()
@@ -27,6 +28,7 @@ const config = {
     rootId: vars.GDDRIVE_TEAM_DIR_ID,
     workDir: vars.GDRIVE_WORK_DIR,
     url: vars.GDRIVE_URL,
+    scopes: vars.GS_SCOPES.split(',') || [],
     secret: {
       type: vars.GS_TYPE,
       project: vars.GS_PROJECT,

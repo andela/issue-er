@@ -2,21 +2,22 @@ module.exports = {
   FindProject: `
     query FindProject($owner: String!, $name: String!, $projectName: String!) {
       repository(owner: $owner, name: $name) {
-        projects(first: 1, search: $projectName){
+        projects(first: 1, search: $projectName) {
           edges {
             node {
-            columns(first:1) {
-              edges{
-                node {
-                  id
-                  name
-                  cards(first: 20) {
-                    edges {
-                      node{
-                        id
-                        content
-                        column {
+              columns(first: 1) {
+                edges {
+                  node {
+                    id
+                    name
+                    cards(first: 20) {
+                      edges {
+                        node {
                           id
+                          content
+                          column {
+                            id
+                          }
                         }
                       }
                     }
@@ -30,17 +31,30 @@ module.exports = {
     }
   `,
   FindProjectColumns: `
-    query FindProjectColumns($owner:String!, $name:String!, $projectName:String!) {
-      repository(owner:$owner,name:$name) {
-        projects(first:1, search:$projectName){
+    query FindProjectColumns($owner: String!, $name: String!, $projectName: String!) {
+      repository(owner: $owner, name: $name) {
+        projects(first: 2, search: $projectName){
           edges {
             node {
+              id
+              name
               columns(first: 20) {
-                totalCount
                 edges {
                   node {
                     id
                     name
+                    cards(first: 100) {
+                      edges {
+                        node {
+                          id
+                          content
+                          column {
+                            id
+                            name
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -51,9 +65,9 @@ module.exports = {
     }
   `,
   FindIssue: `
-    query FindIssue($owner: String!, $name: String!) {
-      repository(owner:$owner, name:$name) {
-        issue(number:161) {
+    query FindIssue($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        issue(number: $number) {
           id
           title
           projectCards(first: 20) {
@@ -71,7 +85,7 @@ module.exports = {
               }
             }
           }
-          labels(first: 20) {
+          labels(first: 100) {
             edges {
               node {
                 id
@@ -120,6 +134,17 @@ module.exports = {
           }
         }
         clientMutationId
+      }
+    }
+  `,
+  DeleteProjectCard: `
+    mutation DeleteProjectCard($card: DeleteProjectCardInput!) {
+      deleteProjectCard(input: $card)
+        deletedCardId
+        column {
+          id
+          name
+        }
       }
     }
   `
