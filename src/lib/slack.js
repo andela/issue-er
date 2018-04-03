@@ -4,22 +4,22 @@ const queryString = require('query-string')
 
 const config = require('../config')
 
-const { token } = config.slack
+const { token, bot: botToken } = config.slack
 
 const client = new Slack(token)
+const bot = new Slack(botToken)
 
 function createSlackGroup (name) {
   return new Promise((resolve, reject) => {
-    return client.groups.create(name,
-      (err, data) => {
-        if (err) {
-          console.log(err)
-          reject(err)
-        } else {
-          console.log(data)
-          resolve(data.group.id)
-        }
+    return getSlackGroupID(name)
+      .catch(() => {
+        return client.groups.create(name,
+          (err, data) => {
+            if (err) return reject(err)
+            return resolve(data.group.id)
+          }).catch(err => reject(err))
       })
+      .then(id => resolve(id))
   })
 }
 
@@ -28,15 +28,10 @@ function archiveSlackGroup (name) {
     return getSlackGroupID(name).then((id) => {
       return client.groups.archive(id,
         (err, res) => {
-          if (err) {
-            console.log(err)
-            reject(err)
-          } else {
-            console.log(res)
-            resolve(res)
-          }
+          if (err) return reject(err)
+          return resolve(res)
         })
-    })
+    }).catch(err => reject(err))
   })
 }
 
@@ -45,42 +40,39 @@ function unarchiveSlackGroup (name) {
     return getSlackGroupID(name).then((id) => {
       return client.groups.unarchive(id,
         (err, res) => {
-          if (err) {
-            console.log(err)
-            reject(err)
-          } else {
-            console.log(res)
-            resolve(res)
-          }
+          if (err) return reject(err)
+          return resolve(res)
         })
-    })
+    }).catch(err => reject(err))
   })
 }
 
-function setSlackGroupPurpose (groupID, purpose=``) {
+function setSlackGroupPurpose (groupID, purpose='') {
   return new Promise((resolve, reject) => {
     return client.groups.setPurpose(groupID, purpose,
       (err, data) => {
-        if (err) {
-          console.log(err)
-          reject(err)
-        } else {
-          resolve(data)
-        }
+        if (err) return reject(err)
+        return resolve(data)
       })
   })
 }
 
-function setSlackGroupTopic (groupID, topic=``) {
+function setSlackGroupTopic (groupID, topic='') {
   return new Promise((resolve, reject) => {
     return client.groups.setTopic(groupID, topic,
       (err, data) => {
-        if (err) {
-          console.log(err)
-          reject(err)
-        } else {
-          resolve(data)
-        }
+        if (err) return reject(err)
+        return resolve(data)
+      })
+  })
+}
+
+function inviteBotToSlackGroup (groupID, userID) {
+  return new Promise((resolve, reject) => {
+    return client.groups.invite(groupID, userID,
+      (err, data) => {
+        if (err) return reject(err)
+        return resolve(data)
       })
   })
 }
@@ -89,26 +81,18 @@ function inviteToSlackGroup (groupID, userID) {
   return new Promise((resolve, reject) => {
     return client.groups.invite(groupID, userID,
       (err, data) => {
-        if (err) {
-          console.log(err)
-          reject(err)
-        } else {
-          resolve(data)
-        }
+        if (err) return reject(err)
+        return resolve(data)
       })
   })
 }
 
-function postMessageToSlack (id, text=``) {
+function postMessageToSlack (id, text='') {
   return new Promise((resolve, reject) => {
-    return client.chat.postMessage(id, text,
+    return bot.chat.postMessage(id, text,
       (err, data) => {
-        if (err) {
-          console.log(err)
-          reject(err)
-        } else {
-          resolve(data)
-        }
+        if (err) return reject(err)
+        return resolve(data)
       })
   })
 }
@@ -118,18 +102,14 @@ function getSlackUserID (name) {
   return new Promise((resolve, reject) => {
     return client.users.list((err, data) => {
       let userID = null
-      if (err) {
-        console.log(err)
-        reject(err)
-      } else {
-        for (const user of data.members) {
-          if (`@${user.name}` === name) {
-            userID = user.id
-            break
-          }
+      if (err) return reject(err)
+      for (const user of data.members) {
+        if (`@${user.name}` === name) {
+          userID = user.id
+          break
         }
-        resolve(userID)
       }
+      return resolve(userID)
     }, {
       limit: 1000
     })
@@ -144,7 +124,6 @@ function getSlackUserIDByEmail (email) {
       token,
       email
     }
-
     return fetch(` https://slack.com/api/auth.findUser?${queryString.stringify(params)}`)
       .then((res) => res.json())
       .then((body) => {
@@ -159,18 +138,14 @@ function getSlackGroupID (name) {
   return new Promise((resolve, reject) => {
     return client.groups.list((err, data) => {
       let groupID = null
-      if (err) {
-        console.log(err)
-        reject(err)
-      } else {
-        for (const group of data.groups) {
-          if (group.name === name) {
-            groupID = group.id
-            break
-          }
+      if (err) return reject(err)
+      for (const group of data.groups) {
+        if (group.name === name) {
+          groupID = group.id
+          break
         }
-        resolve(groupID)
       }
+      return resolve(groupID)
     }, {
       limit: 1000,
       exclude_archived: true,
@@ -182,8 +157,8 @@ function getSlackGroupID (name) {
 function getSlackTeamID () {
   return new Promise((resolve, reject) => {
     return client.team.info((err, data) => {
-      if (err) reject(err)
-      resolve(data.team.id)
+      if (err) return reject(err)
+      return resolve(data.team.id)
     })
   })
 }
@@ -192,8 +167,8 @@ function getSlackProfile (userID) {
   return new Promise((resolve, reject) => {
     return client.users.info(userID,
       (err, data) => {
-        if (err) reject(err)
-        resolve(data.user)
+        if (err) return reject(err)
+        return resolve(data.user)
     })
   })
 }
@@ -202,12 +177,9 @@ function retrieveSlackHistory (groupID) {
   return new Promise((resolve, reject) => {
     return client.groups.history(groupID,
       (err, data) => {
-        if (err) {
-          console.log(err)
-          reject(err)
-        } else {
-          resolve(data.messages.filter((message) => message.type === 'message' && !message.subtype))
-        }
+        if (err) return reject(err)
+        return resolve(data.messages
+          .filter((message) => message.type === 'message' && !message.subtype))
       }, {
         count: 1000
       })
@@ -219,6 +191,7 @@ module.exports = {
   archiveSlackGroup,
   unarchiveSlackGroup,
   inviteToSlackGroup,
+  inviteBotToSlackGroup,
   getSlackUserIDByEmail,
   getSlackUserID,
   getSlackGroupID,

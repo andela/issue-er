@@ -1,3 +1,4 @@
+const async = require('async')
 const dateFormat = require('dateformat')
 
 const {
@@ -19,8 +20,8 @@ const {
 const {
   createSlackGroup,
   archiveSlackGroup,
-  unarchiveSlackGroup,
   inviteToSlackGroup,
+  inviteBotToSlackGroup,
   getSlackUserIDByEmail,
   getSlackUserID,
   getSlackGroupID,
@@ -46,11 +47,11 @@ const baseVariables = { owner, name: repo }
 // !This is temporary solution!
 // forEach polyfill
 // https://codeburst.io/javascript-async-await-with-foreach-b6ba62bbf404
-async function asyncForEach(array, callback) {
-  for (let index = 0; index < array.length; index++) {
-    await callback(array[index], index, array)
-  }
-}
+// async function asyncForEach(array, callback) {
+//   for (let index = 0; index < array.length; index++) {
+//     await callback(array[index], index, array)
+//   }
+// }
 
 function joinArrayObject (array) {
   let str = ''
@@ -139,7 +140,7 @@ const moveProjectCard = async (destinationColumnName, issue, variables) => {
 
   const { repository: { issue: { projectCards } } }  = issue
 
-  asyncForEach(projectCards.edges, async ({ node: {
+  async.each(projectCards.edges, async ({ node: {
     id: cardId,
     project: { name: projectName },
     column: { id: currentColumnId, name: currentColumnName } } }) => {
@@ -147,8 +148,8 @@ const moveProjectCard = async (destinationColumnName, issue, variables) => {
       Object.assign({}, variables, { projectName })
     )
     const { repository: { projects: { edges } } } = project
-    asyncForEach(edges, async ({ node: { columns: { edges } } }) => {
-      asyncForEach(edges, async ({ node: { id: columnId, name: columnName } }) => {
+    async.each(edges, async ({ node: { columns: { edges } } }) => {
+      async.each(edges, async ({ node: { id: columnId, name: columnName } }) => {
         if (columnId === currentColumnId) return
         if (columnName.toLowerCase() === currentColumnName.toLowerCase()) return
         if (columnName.toLowerCase() !== destinationColumnName.toLowerCase()) return
@@ -163,59 +164,71 @@ const moveProjectCard = async (destinationColumnName, issue, variables) => {
 
 const opened = async (payload) => {
   const { issue: { number, body, assignee: { login } } } = payload
-  const res = await getAirtableRequestRecord('request', number)
+  const res = await getAirtableRequestRecord(number)
   const record = res[0]
   const recordId = record.getId()
-  const depId = record.get('departmentID')[0]
-  const depName = record.get('departmentName')[0]
   const requestId = record.get('requestID')
-  const requestTitle = record.get('title')
   const requestView = view + recordId
-
-  const cwd = await workspace()
-
-  const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
-  const requestFolderName = `${requestId} (${requestTitle})`
-
-  const depFolder = await createFolder(depFolderName, [cwd.id])
-  const requestFolder = await createFolder(requestFolderName, [depFolder.id])
-
-  const { url } = config.google
-
   const group = `${namespace}-${number}`
-  let groupID = await getSlackGroupID(group)
+  const { url } = config.google
+  
+  async.waterfall([
+    async () => {
+      const groupId = await createSlackGroup(group)
+      return { groupId }
+    },
+    async ({ groupId }) => {
+      const botId = await getSlackUserID(`@${login}`)
+      await inviteBotToSlackGroup(groupId, botId)
+      return { groupId, botId }
+    },
+    async ({ groupId }) => {
+      const userIds = await Promise.all([
+        ...managers.map(async (manager) => {
+          const userId = await getSlackUserIDByEmail(manager)
+          await inviteToSlackGroup(groupId, userId)
+          return userId
+        })
+      ])
+      return { groupId, userIds }
+    },
+    async ({ groupId, userIds }) => {
+      const depId = record.get('departmentID')[0]
+      const depName = record.get('departmentName')[0]
+      const requestTitle = record.get('title')
 
-  await issues.editIssue(number, {
-    body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [GDrive Assets repository: ${depFolder.name}](${url}/${requestFolder.id}) \r\n ${body}`
-  })
+      const cwd = await workspace()
 
-  const botID = await getSlackUserID(`@${login}`)
+      const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
+      const requestFolderName = `${requestId} (${requestTitle})`
 
-  if (groupID) {
-    await Promise.all([
-      ...managers.map(async (manager) => {
-        const userID = await getSlackUserIDByEmail(manager)
-        await inviteToSlackGroup(groupID, userID)
-      }),
-      inviteToSlackGroup(groupID, botID)
-    ])
-  } else {
-    await createSlackGroup(group)
-    groupID = await getSlackGroupID(group)
-    await Promise.all([
-      ...managers.map(async (manager) => {
-        const userID = await getSlackUserIDByEmail(manager)
-        await inviteToSlackGroup(groupID, userID)
-      }),
-      inviteToSlackGroup(groupID, botID)
-    ])
-  }
+      const depFolder = await createFolder(depFolderName, [cwd.id])
+      const folder = await createFolder(requestFolderName, [depFolder.id])
+
+      return { groupId, userIds, gdrive: { folder } }
+    },
+    async ({ groupId, gdrive: { folder } }) => {
+      const purpose = `Discuss ticket # ${number}. Request ID: ${requestId}`
+      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
+      await Promise.all([
+        setSlackGroupPurpose(groupId, purpose),
+        setSlackGroupTopic(groupId, topic)
+      ])
+      return { groupId, gdrive: { folder } }
+    },
+    async ({ groupId, gdrive: { folder } }) => {
+      const teamId = await getSlackTeamID()
+      await issues.editIssue(number, {
+        body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [GDrive assets repository: ${folder.name}](${url}/${folder.id}) \r\n ### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
+      })
+    }
+  ])
 }
 
 const labeled = async (payload) => {
   const { issue: { number, labels }, label: { name } } = payload
 
-  const record = await getAirtableRequestRecord('request', number)
+  const record = await getAirtableRequestRecord(number)
 
   const projectName = name === 'incoming' ? 'All Projects' : name
 
@@ -232,81 +245,101 @@ const labeled = async (payload) => {
   const issueLabels = issue.repository.issue.labels.edges
     .filter((label) => label.node.name === name)
 
-  asyncForEach(issueLabels, async (label) => {
+  async.eachSeries(issueLabels, async (label) => {
     const { node: { name, description } } = label
-    try {
-      switch(description) {
-        case 'department':
-          await addToProject(project, issue, variables)
-          break
-        case 'status':
-          await Promise.all([
-            updateStatus(record[0], name),
-            moveProjectCard(name, issue, variables)
-          ])
-          break
-        case 'priority':
-          await updatePriority(record[0], labels, name, number)
-          break
-        case 'category':
-          await updateCategory(record[0], name)
-          break
-        default:
-          console.log('No matching label description')
-      }
-    } catch(err) {
-      console.log(err)
+    switch(description) {
+      case 'department':
+        await addToProject(project, issue, variables)
+        break
+      case 'status':
+        await Promise.all([
+          updateStatus(record[0], name),
+          moveProjectCard(name, issue, variables)
+        ])
+        break
+      case 'priority':
+        await updatePriority(record[0], labels, name, number)
+        break
+      case 'category':
+        await updateCategory(record[0], name)
+        break
+      default:
+        console.log('No matching label description')
     }
   })
-
 }
 
 const assigned = async (payload) => {
   const { issue: { number } } = payload
-  const requestRecord = await getAirtableRequestRecord('request', number)
-  const requestRecordID = requestRecord[0].getId()
+  const requestRecord = await getAirtableRequestRecord(number)
+  const record = requestRecord[0]
+  const requestId = record.getId()
 
   const group = `${namespace}-${number}`
   const assignee = payload.issue.assignee.login
-  const staffRecord = await getAirtableStaffRecord('staff', assignee)
-  const owner = staffRecord[0]
 
-  if (owner) {
-    const staffRecordID = owner.getId()
-    const ownerEmail = owner.get('email')
-    const groupID = await getSlackGroupID(group)
-    const userID = await getSlackUserIDByEmail(`${ownerEmail}`)
-    await Promise.all([
-      base('request').update(requestRecordID, { 'owner': [`${staffRecordID}`] }),
-      inviteToSlackGroup(groupID, userID)
-    ])
-  }
+  async.waterfall([
+    async () => {
+      const groupId = await getSlackGroupID(group)
+      return { groupId }
+    },
+    async ({groupId}) => {
+      const ownerRecord = await getAirtableStaffRecord(assignee)
+      const owner = ownerRecord[0]
+      const ownerId = owner.getId()
+      const ownerEmail = owner.get('email')
+      const ownerSlackId = await getSlackUserIDByEmail(`${ownerEmail}`)
+      await Promise.all([
+        base('request').update(requestId, { 'owner': [`${ownerId}`] }),
+        inviteToSlackGroup(groupId, ownerSlackId)
+      ])
+
+      return { owner, groupId, ownerSlackId }
+    },
+    async ({ groupId, ownerSlackId }) => {
+      const requestedEmail = record.get('requestedEmail')[0]
+
+      const requestedSlack = await getSlackUserIDByEmail(requestedEmail)
+      const message = `Hi, <@${requestedSlack}>, your studio request will be serviced by <@${ownerSlackId}>`
+
+      await postMessageToSlack(groupId, message)
+    }
+  ])
 }
 
 const closed = async (payload) => {
   const { issue: { number } } = payload
 
   const group = `${namespace}-${number}`
-  const groupID = await getSlackGroupID(group)
-  // Dump Slack History in Github Issue
-  if (groupID) {
-    const teamID = await getSlackTeamID()
-    const history = await retrieveSlackHistory(groupID)
-    const messages = history.map(async (message) => {
-      const profile = await getSlackProfile(message.user)
-      return `**${profile.name}**: \r\n ${message.text}`
-    })
 
-    const groupHistory = await Promise.all(messages)
-
-    if (groupHistory.length >= 0) {
-      await Promise.all([
-        issues.createIssueComment(number, `# [${group} history](https://slack.com/app_redirect?channel=${groupID}&&team=${teamID}) \r\n ${joinArrayObject(groupHistory)}`)
+  async.waterfall([
+    async () => {
+      const groupId = await getSlackGroupID(group)
+      return { groupId }
+    },
+    async ({ groupId }) => {
+      const [teamId, history] = await Promise.all([
+        getSlackTeamID(),
+        retrieveSlackHistory(groupId)
       ])
-    }
+      return { groupId, teamId, history }
+    },
+    async ({ groupId, teamId, history }) => {
+      const messages = history.map(async (message) => {
+        const profile = await getSlackProfile(message.user)
+          return `**${profile.name}**: \r\n ${message.text}`
+      })
 
-    await archiveSlackGroup(group)
-  }
+      const groupHistory = await Promise.all(messages)
+
+      await Promise.all([
+        issues.createIssueComment(number, `# [${group} history](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${joinArrayObject(groupHistory)}`)
+      ])
+    },
+    async () => {
+      await archiveSlackGroup(group)
+    }
+  ])
 }
 
 module.exports = { opened, labeled, assigned, closed }

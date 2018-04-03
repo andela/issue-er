@@ -7,18 +7,18 @@ const base = new Airtable({
   apiKey: config.airtable.key
 }).base(config.airtable.base)
 
-function getAirtableRequestRecord (name, issueNumber) {
+function getAirtableRequestRecord (issueNumber) {
   return retry(async () => {
-    const record = await base(name).select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
+    const record = await base('request').select({ filterByFormula: `githubIssue = '${issueNumber}'`}).firstPage()
     return record
   }, {
     retries: 10
   })
 }
 
-function getAirtableStaffRecord (name, assignee) {
+function getAirtableStaffRecord (assignee) {
   return retry(async () => {
-    const record = await base(name).select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
+    const record = await base('staff').select({ filterByFormula: `github = '@${assignee}'`}).firstPage()
     return record
   }, {
     retries: 10

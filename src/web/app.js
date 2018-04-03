@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
     }
 
     const now = moment()
-    const inTenMinutes = now.clone().add(10, 'minutes')
+    const inTenMinutes = now.clone().add(1, 'minute')
     const inOneMinute = now.clone().add(1, 'minute')
 
     const job = new CronJob({
