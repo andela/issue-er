@@ -134,16 +134,12 @@ function getSlackUserIDByEmail (email) {
 
 function getSlackGroupID (name) {
   return new Promise((resolve, reject) => {
-    return client.groups.list((err, data) => {
-      let groupID = null
+    return client.groups.list((err, { groups }) => {
       if (err) return reject(err)
-      for (const group of data.groups) {
-        if (group.name === name) {
-          groupID = group.id
-          break
-        }
-      }
-      return resolve(groupID)
+      const group = groups.find((group) => {
+        return group.name.toLowerCase() === name.toLowerCase()
+      })
+      return resolve(group.id || null)
     }, {
       limit: 1000,
       exclude_archived: true,
