@@ -29,14 +29,12 @@ const drive = google.drive({
 const MIME_TYPE = "application/vnd.google-apps.folder"
 
 function workspace () {
-  return new Promise((resolve, reject) => {
-    return findFolder(workDir)
-      .then(folder => {
-        if (folder) return resolve(folder)
-        return createFolder(workDir)
-          .then(({ data }) => resolve(data))
-          .catch(err => reject(err))
-      }).catch(err => reject(err))
+  return new Promise(async (resolve, reject) => {
+    const folder = await findFolder(workDir)
+    if (folder) return resolve(folder)
+    return createFolder(workDir)
+      .then(({ data }) => resolve(data))
+      .catch(err => reject(err))
   })
 }
 

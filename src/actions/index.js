@@ -170,8 +170,7 @@ const opened = async (payload) => {
   const requestId = record.get('requestID')
   const requestView = view + recordId
   const group = `${namespace}-${number}`
-  const { url } = config.google
-  
+  // const { url } = config.google
   async.waterfall([
     async () => {
       const groupId = await createSlackGroup(group)
@@ -193,33 +192,39 @@ const opened = async (payload) => {
       return { groupId, userIds }
     },
     async ({ groupId, userIds }) => {
-      const depId = record.get('departmentID')[0]
-      const depName = record.get('departmentName')[0]
-      const requestTitle = record.get('title')
+      // const depId = record.get('departmentID')[0]
+      // const depName = record.get('departmentName')[0]
+      // const requestTitle = record.get('title')
+      // const cwd = await workspace()
 
-      const cwd = await workspace()
+      // const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
+      // const requestFolderName = `${requestId} (${requestTitle})`
+      //
+      // const depFolder = await createFolder(depFolderName, [cwd.id])
+      // const folder = await createFolder(requestFolderName, [depFolder.id])
 
-      const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
-      const requestFolderName = `${requestId} (${requestTitle})`
+      // return { groupId, userIds, gdrive: { folder } }
+      return { groupId, userIds }
 
-      const depFolder = await createFolder(depFolderName, [cwd.id])
-      const folder = await createFolder(requestFolderName, [depFolder.id])
-
-      return { groupId, userIds, gdrive: { folder } }
     },
-    async ({ groupId, gdrive: { folder } }) => {
+    async ({ groupId }) => {
       const purpose = `Discuss ticket # ${number}. Request ID: ${requestId}`
-      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
+      // const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
+      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n`
+
       await Promise.all([
         setSlackGroupPurpose(groupId, purpose),
         setSlackGroupTopic(groupId, topic)
       ])
-      return { groupId, gdrive: { folder } }
+      return { groupId }
     },
-    async ({ groupId, gdrive: { folder } }) => {
+    async ({ groupId }) => {
       const teamId = await getSlackTeamID()
+      // await issues.editIssue(number, {
+      //   body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [GDrive assets repository: ${folder.name}](${url}/${folder.id}) \r\n ### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
+      // })
       await issues.editIssue(number, {
-        body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [GDrive assets repository: ${folder.name}](${url}/${folder.id}) \r\n ### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
+        body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
       })
     }
   ])
@@ -245,7 +250,7 @@ const labeled = async (payload) => {
   const issueLabels = issue.repository.issue.labels.edges
     .filter((label) => label.node.name === name)
 
-  async.eachSeries(issueLabels, async (label) => {
+  async.each(issueLabels, async (label) => {
     const { node: { name, description } } = label
     switch(description) {
       case 'department':
@@ -265,6 +270,11 @@ const labeled = async (payload) => {
         break
       default:
         console.log('No matching label description')
+    }
+
+    // Add to 'All Projects'
+    if (name === 'incoming') {
+      await addToProject(project, issue, variables)
     }
   })
 }

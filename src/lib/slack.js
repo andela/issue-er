@@ -10,40 +10,38 @@ const client = new Slack(token)
 const bot = new Slack(botToken)
 
 function createSlackGroup (name) {
-  return new Promise((resolve, reject) => {
-    return getSlackGroupID(name)
-      .catch(() => {
-        return client.groups.create(name,
-          (err, data) => {
-            if (err) return reject(err)
-            return resolve(data.group.id)
-          }).catch(err => reject(err))
+  return new Promise(async (resolve, reject) => {
+    const groupId = await getSlackGroupID(name)
+    if (groupId) return resolve(groupId)
+    return client.groups.create(name,
+      (err, data) => {
+        if (err) return reject(err)
+        return resolve(data.group.id)
       })
-      .then(id => resolve(id))
   })
 }
 
 function archiveSlackGroup (name) {
-  return new Promise((resolve, reject) => {
-    return getSlackGroupID(name).then((id) => {
-      return client.groups.archive(id,
-        (err, res) => {
-          if (err) return reject(err)
-          return resolve(res)
-        })
-    }).catch(err => reject(err))
+  return new Promise(async (resolve, reject) => {
+    const groupId = await getSlackGroupID(name)
+    if (groupId) return resolve(groupId)
+    return client.groups.archive(groupId,
+      (err, res) => {
+        if (err) return reject(err)
+        return resolve(res)
+      })
   })
 }
 
 function unarchiveSlackGroup (name) {
-  return new Promise((resolve, reject) => {
-    return getSlackGroupID(name).then((id) => {
-      return client.groups.unarchive(id,
-        (err, res) => {
-          if (err) return reject(err)
-          return resolve(res)
-        })
-    }).catch(err => reject(err))
+  return new Promise(async (resolve, reject) => {
+    const groupId = await getSlackGroupID(name)
+    if (groupId) return resolve(groupId)
+    return client.groups.unarchive(groupId,
+      (err, res) => {
+        if (err) return reject(err)
+        return resolve(res)
+      })
   })
 }
 
