@@ -104,10 +104,8 @@ const updateCategory = async (record, category) => {
   if (!category) return
 
   const recordId = record.getId()
-  const jobCategory = record.get('jobCategory')
-  if (category !== jobCategory) {
-    await base('request').update(recordId, { 'jobCategory': category })
-  }
+
+  await base('request').update(recordId, { 'jobCategory': category })
 }
 
 const addToProject = async (project, issue, variables) => {
