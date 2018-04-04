@@ -38,20 +38,12 @@ const config = require('../config')
 const { managers, namespace } = config.team
 const { owner, repo } = config.github
 const { view } = config.airtable
+const { url } = config.google
 
 const operations = require('../graphql/queries')
 
 // Create query and mutation variable object
 const baseVariables = { owner, name: repo }
-
-// !This is temporary solution!
-// forEach polyfill
-// https://codeburst.io/javascript-async-await-with-foreach-b6ba62bbf404
-// async function asyncForEach(array, callback) {
-//   for (let index = 0; index < array.length; index++) {
-//     await callback(array[index], index, array)
-//   }
-// }
 
 function joinArrayObject (array) {
   let str = ''
@@ -164,13 +156,13 @@ const moveProjectCard = async (destinationColumnName, issue, variables) => {
 
 const opened = async (payload) => {
   const { issue: { number, body, assignee: { login } } } = payload
-  const res = await getAirtableRequestRecord(number)
-  const record = res[0]
+  const requestRecord = await getAirtableRequestRecord(number)
+  const record = requestRecord[0]
   const recordId = record.getId()
   const requestId = record.get('requestID')
   const requestView = view + recordId
   const group = `${namespace}-${number}`
-  // const { url } = config.google
+
   async.waterfall([
     async () => {
       const groupId = await createSlackGroup(group)
@@ -192,39 +184,36 @@ const opened = async (payload) => {
       return { groupId, userIds }
     },
     async ({ groupId, userIds }) => {
-      // const depId = record.get('departmentID')[0]
-      // const depName = record.get('departmentName')[0]
-      // const requestTitle = record.get('title')
-      // const cwd = await workspace()
+      const depId = record.get('departmentID')[0]
+      const depName = record.get('departmentName')[0]
+      const requestTitle = record.get('title')
 
-      // const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
-      // const requestFolderName = `${requestId} (${requestTitle})`
-      //
-      // const depFolder = await createFolder(depFolderName, [cwd.id])
-      // const folder = await createFolder(requestFolderName, [depFolder.id])
+      const cwd = await workspace()
 
-      // return { groupId, userIds, gdrive: { folder } }
-      return { groupId, userIds }
+      const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
+      const requestFolderName = `${requestId} (${requestTitle})`
+
+      const depFolder = await createFolder(depFolderName, [cwd.id])
+      const folder = await createFolder(requestFolderName, [depFolder.id])
+
+      return { groupId, userIds, gdrive: { folder } }
 
     },
-    async ({ groupId }) => {
+    async ({ groupId, gdrive: { folder } }) => {
       const purpose = `Discuss ticket # ${number}. Request ID: ${requestId}`
-      // const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
-      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n`
+      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
 
       await Promise.all([
         setSlackGroupPurpose(groupId, purpose),
         setSlackGroupTopic(groupId, topic)
       ])
-      return { groupId }
+      return { groupId, gdrive: { folder } }
     },
-    async ({ groupId }) => {
+    async ({ groupId, gdrive: { folder } }) => {
       const teamId = await getSlackTeamID()
-      // await issues.editIssue(number, {
-      //   body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [GDrive assets repository: ${folder.name}](${url}/${folder.id}) \r\n ### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
-      // })
+
       await issues.editIssue(number, {
-        body: `# Request ID: [${requestId}](${requestView}) \r\n \r\n ### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
+        body: `#### [Airtable Record: ${requestId}](${requestView}) \r\n #### [Google Drive: ${folder.name}](${url}/${folder.id}) \r\n #### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
       })
     }
   ])
@@ -310,7 +299,10 @@ const assigned = async (payload) => {
       const requestedEmail = record.get('requestedEmail')[0]
 
       const requestedSlack = await getSlackUserIDByEmail(requestedEmail)
-      const message = `Hi, <@${requestedSlack}>, your studio request will be serviced by <@${ownerSlackId}>`
+      
+      await inviteToSlackGroup(groupId, requestedSlack)
+
+      const message = `Hi <@${requestedSlack}>, your studio request will be serviced by <@${ownerSlackId}>`
 
       await postMessageToSlack(groupId, message)
     }

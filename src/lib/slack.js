@@ -24,7 +24,6 @@ function createSlackGroup (name) {
 function archiveSlackGroup (name) {
   return new Promise(async (resolve, reject) => {
     const groupId = await getSlackGroupID(name)
-    if (groupId) return resolve(groupId)
     return client.groups.archive(groupId,
       (err, res) => {
         if (err) return reject(err)
@@ -36,7 +35,6 @@ function archiveSlackGroup (name) {
 function unarchiveSlackGroup (name) {
   return new Promise(async (resolve, reject) => {
     const groupId = await getSlackGroupID(name)
-    if (groupId) return resolve(groupId)
     return client.groups.unarchive(groupId,
       (err, res) => {
         if (err) return reject(err)
@@ -136,10 +134,12 @@ function getSlackGroupID (name) {
   return new Promise((resolve, reject) => {
     return client.groups.list((err, { groups }) => {
       if (err) return reject(err)
+
       const group = groups.find((group) => {
         return group.name.toLowerCase() === name.toLowerCase()
       })
-      return resolve(group.id || null)
+      if (!group) return resolve(null)
+      return resolve(group.id)
     }, {
       limit: 1000,
       exclude_archived: true,

@@ -1,19 +1,8 @@
-const fs = require('fs')
 const { google } = require('googleapis')
-
-const jsonfile = require('jsonfile')
 
 const config = require('../config')
 
 const { secret, scopes, workDir } = config.google
-
-/**
- * Create secret.json file with keys
- */
-// const keyPath = '/tmp/jwt.keys.json'
-// jsonfile.writeFileSync(keyPath, secret, { spaces: 2 })
-// let keys = {}
-// if (fs.existsSync(keyPath)) keys = require(keyPath)
 
 const jwtClient = new google.auth.JWT({
   email: secret.client_email,
@@ -53,8 +42,9 @@ function findFolder (name) {
   return new Promise((resolve, reject) => {
     return drive.files.list(params)
       .then(({ data: { files } }) => {
-        const file = files.filter((file) => file.name.toLowerCase() === name.toLowerCase())[0]
-        if (!file || file === 'undefined')  return resolve(null)
+        const file = files.find(file => file.name === name)
+
+        if (!file)  return resolve(null)
         return getFolder(file)
           .then(res => resolve(res.data))
           .catch(err => reject(err))
@@ -78,32 +68,26 @@ function getFolder (file) {
 
 function createFolder (name, parents=[]) {
   if (!name) return
-  return new Promise((resolve, reject) => {
-    return findFolder(name)
-      .then((folder) => {
-        if (folder) return resolve(folder)
-        const resource = {
-          name,
-          parents,
-          mimeType: MIME_TYPE,
-        }
-        const params = {
-          supportsTeamDrives: true,
-          fields: `id, name`
-        }
-        return drive.files.create({
-          resource,
-          ...params
-        })
-          .then(({ data: { id, name } }) => {
-            return resolve({ id, name })
-          })
-          .catch(err => reject(err))
+  return new Promise(async (resolve, reject) => {
+    const folder = await findFolder(name)
+    if (folder) return resolve(folder)
+    const resource = {
+      name,
+      parents,
+      mimeType: MIME_TYPE,
+    }
+    const params = {
+      supportsTeamDrives: true,
+      fields: `id, name`
+    }
+    return drive.files.create({
+      resource,
+      ...params
+    })
+      .then(({ data: { id, name } }) => {
+        return resolve({ id, name })
       })
-      .catch(err => {
-        console.log(err)
-        return reject(err)
-      })
+      .catch(err => reject(err))
   })
 }
 
