@@ -74,29 +74,13 @@ const updateStatus = async (record, status) => {
   }
 }
 
-const updatePriority = async (record, labels, priority, number) => {
+const updatePriority = async (record, priority) => {
   if (!record) return
-  if (!labels || labels.length === 0) return
   if (!priority) return
-  if (!number) return
-
-  const expediteLabel = 'expedite'
-  const expediteReq = record.get('expedite')
 
   const recordId = record.getId()
-  const jobPriority = record.get('priority')
 
-  if (priority !== jobPriority) {
-    await base('request').update(recordId, { priority })
-  }
-
-  if (expediteReq && !labels.includes(expediteLabel)) {
-    if (priority !== expediteLabel) {
-      const currentLabels = labels.map((label) => label.name)
-      const newLabels = [expediteLabel, ...currentLabels]
-      await issues.editIssue(number, { labels: newLabels })
-    }
-  }
+  await base('request').update(recordId, { priority })
 }
 
 const updateCategory = async (record, category) => {
@@ -154,6 +138,7 @@ const moveProjectCard = async (destinationColumnName, issue, variables) => {
 
 const opened = async (payload) => {
   const { issue: { number, body, assignee: { login } } } = payload
+
   const requestRecord = await getAirtableRequestRecord(number)
   const record = requestRecord[0]
   const recordId = record.getId()
@@ -262,6 +247,15 @@ const labeled = async (payload) => {
     // Add to 'All Projects'
     if (name === 'incoming') {
       await addToProject(project, issue, variables)
+    }
+
+    // Update label with 'expedite'
+    const expediteLabel = 'expedite'
+    const expediteReq = record.get('expedite')
+    if (expediteReq && !labels.includes(expediteLabel)) {
+      const currentLabels = labels.map((label) => label.name)
+      const newLabels = [expediteLabel, ...currentLabels]
+      await issues.editIssue(number, { labels: newLabels })
     }
   })
 }

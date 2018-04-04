@@ -69,12 +69,12 @@ module.exports = async (req, res) => {
     }
 
     const now = moment()
-    const inTenMinutes = now.clone().add(10, 'minutes')
+    const inFifteenMinutes = now.clone().add(15, 'minutes')
     const inOneMinute = now.clone().add(1, 'minute')
 
     const job = new CronJob({
       cronTime: (action === 'opened' || action === 'closed')
-      ? inTenMinutes.toDate()
+      ? inFifteenMinutes.toDate()
       : inOneMinute.toDate(),
       onTick: actions[action](payload),
       start: false,
