@@ -189,10 +189,9 @@ const opened = async (payload) => {
       // const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
       const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n`
 
-      await Promise.all([
-        setSlackGroupPurpose(groupId, purpose),
-        setSlackGroupTopic(groupId, topic)
-      ])
+      await setSlackGroupPurpose(groupId, purpose)
+      await setSlackGroupTopic(groupId, topic)
+
       return { groupId }
       // return { groupId, gdrive: { folder } }
 

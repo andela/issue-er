@@ -1,4 +1,3 @@
-const cluster = require('cluster')
 const crypto = require('crypto')
 const { json, send, text } = require('micro')
 const CronJob = require('cron').CronJob
@@ -71,21 +70,18 @@ module.exports = async (req, res) => {
 
     const now = moment()
     const tz = moment.tz.guess()
-    const time = (number, unit) =>
-      now.clone().add(number, unit).toDate()
+    const time = (number, unit) => now.clone().add(number, unit).toDate()
     
-    if (cluster.isMaster) {
-      const job = new CronJob({
-        cronTime: (action === 'opened' || action === 'closed')
-        ? time(15, 'minutes')
-        : time(1, 'minute'),
-        onTick: actions[action](payload),
-        start: false,
-        timeZone: tz
-      })
+    const job = new CronJob({
+      cronTime: (action === 'opened' || action === 'closed')
+      ? time(15, 'minutes')
+      : time(1, 'minute'),
+      onTick: actions[action](payload),
+      start: false,
+      timeZone: tz
+    })
 
-      job.start()
-    }
+    job.start()
 
     return send(res, 200, {
       body: `Scheduled '${action}' job for issue: '${payload.issue.number}'`
