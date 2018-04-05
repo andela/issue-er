@@ -69,6 +69,7 @@ module.exports = async (req, res) => {
     }
 
     const now = moment()
+    const tz = moment.tz.guess()
     const inFifteenMinutes = now.clone().add(15, 'minutes')
     const inOneMinute = now.clone().add(1, 'minute')
 
@@ -78,7 +79,7 @@ module.exports = async (req, res) => {
       : inOneMinute.toDate(),
       onTick: actions[action](payload),
       start: false,
-      timeZone: 'America/New_York'
+      timeZone: tz
     })
 
     job.start()

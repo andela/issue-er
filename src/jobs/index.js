@@ -14,13 +14,13 @@ const operations = require('../graphql/queries')
 // Create query and mutation variable object
 const baseVariables = { owner, name: repo }
 
-
+const tz = moment.tz.guess()
 
 const clearOld = new CronJob({
   cronTime: '00 00 23 * * 0-6',
   onTick: async () => {
     const now = moment()
-    const twoWeeksAgo = now.substract(14, 'days').toDate()
+    const twoWeeksAgo = now.clone().subtract(14, 'days').toDate()
 
     const variables =  Object.assign({}, baseVariables, {
       projectName: 'All Projects'
@@ -47,7 +47,7 @@ const clearOld = new CronJob({
     // Clear out issues on 'All Projects' older than 14 days
   },
   start: true,
-  timezone: 'America/New_York'
+  timeZone: tz
 })
 
 module.exports = {

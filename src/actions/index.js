@@ -171,32 +171,41 @@ const opened = async (payload) => {
       const depName = record.get('departmentName')[0]
       const requestTitle = record.get('title')
 
-      const cwd = await workspace()
+      // const cwd = await workspace()
 
-      const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
-      const requestFolderName = `${requestId} (${requestTitle})`
 
-      const depFolder = await createFolder(depFolderName, [cwd.id])
-      const folder = await createFolder(requestFolderName, [depFolder.id])
+      // const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
+      // const requestFolderName = `${requestId} (${requestTitle})`
+      //
+      // const depFolder = await createFolder(depFolderName, [cwd.id])
+      // const folder = await createFolder(requestFolderName, [depFolder.id])
 
-      return { groupId, userIds, gdrive: { folder } }
+      // return { groupId, userIds, gdrive: { folder } }
 
+      return { groupId, userIds }
     },
-    async ({ groupId, gdrive: { folder } }) => {
+    async ({ groupId }) => {
       const purpose = `Discuss ticket # ${number}. Request ID: ${requestId}`
-      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
+      // const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
+      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n`
 
       await Promise.all([
         setSlackGroupPurpose(groupId, purpose),
         setSlackGroupTopic(groupId, topic)
       ])
-      return { groupId, gdrive: { folder } }
+      return { groupId }
+      // return { groupId, gdrive: { folder } }
+
     },
-    async ({ groupId, gdrive: { folder } }) => {
+    async ({ groupId }) => {
       const teamId = await getSlackTeamID()
 
+      // await issues.editIssue(number, {
+      //   body: `#### [Airtable Record: ${requestId}](${requestView}) \r\n #### [Google Drive: ${folder.name}](${url}/${folder.id}) \r\n #### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
+      // })
+
       await issues.editIssue(number, {
-        body: `#### [Airtable Record: ${requestId}](${requestView}) \r\n #### [Google Drive: ${folder.name}](${url}/${folder.id}) \r\n #### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
+        body: `#### [Airtable Record: ${requestId}](${requestView}) \r\n #### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
       })
     }
   ])
