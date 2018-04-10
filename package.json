@@ -43,9 +43,10 @@
     "jsonfile": "^4.0.0",
     "micro": "^9.1.4",
     "micro-cors": "^0.0.4",
-    "moment": "^2.21.0",
+    "moment": "^2.22.0",
     "node-fetch": "^2.0.0",
     "query-string": "^5.1.0",
+    "run-at": "^2.1.0",
     "then-sleep": "^1.0.1",
     "verify-github-webhook": "^1.0.1"
   },

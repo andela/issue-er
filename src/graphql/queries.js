@@ -139,11 +139,91 @@ module.exports = {
   `,
   DeleteProjectCard: `
     mutation DeleteProjectCard($card: DeleteProjectCardInput!) {
-      deleteProjectCard(input: $card)
+      deleteProjectCard(input: $card) {
         deletedCardId
-        column {
-          id
-          name
+      }
+    }
+  `,
+  FindAllIssues: `
+    query FindAllIssues($owner: String!, $name: String!, $order: IssueOrder!, $initial: Boolean = true, $hasNextPage: Boolean = false, $cursorId: String!) {
+      repository(owner: $owner, name: $name) {
+        ...@skip(if: $initial) {
+          issues(first: 100, orderBy: $order, after: $cursorId) {
+            totalCount
+            edges {
+              node {
+                id
+                number
+                closed
+                closedAt
+                labels (first: 10) {
+                  edges {
+                    node {
+                      id
+                      description
+                      name
+                    }
+                  }
+                }
+                projectCards(first: 2) {
+                  edges {
+                    node {
+                      id
+                      project {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+              cursor
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
+          }
+        }
+        ...@skip (if: $hasNextPage) {
+          issues(first: 100, orderBy: $order ) {
+            totalCount
+            edges {
+              node {
+                id
+                number
+                closed
+                closedAt
+                labels (first: 10) {
+                  edges {
+                    node {
+                      id
+                      description
+                      name
+                    }
+                  }
+                }
+                closedAt 
+                projectCards(first: 2) {
+                  edges {
+                    node {
+                      id
+                      content
+                      project {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+              cursor
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
+          }
         }
       }
     }

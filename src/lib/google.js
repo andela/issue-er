@@ -7,7 +7,7 @@ const { secret, scopes, workDir } = config.google
 const jwtClient = new google.auth.JWT({
   email: secret.client_email,
   key: secret.private_key,
-  scopes,
+  scopes
 })
 
 const drive = google.drive({
@@ -92,7 +92,6 @@ function createFolder (name, parents=[]) {
 }
 
 module.exports = {
-  client: jwtClient,
   createFolder,
   findFolder,
   getFolder,

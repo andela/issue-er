@@ -148,15 +148,20 @@ const opened = async (payload) => {
 
   async.waterfall([
     async () => {
+
       const groupId = await createSlackGroup(group)
+
       return { groupId }
     },
     async ({ groupId }) => {
+
       const botId = await getSlackUserID(`@${login}`)
+
       await inviteBotToSlackGroup(groupId, botId)
       return { groupId, botId }
     },
     async ({ groupId }) => {
+
       const userIds = await Promise.all([
         ...managers.map(async (manager) => {
           const userId = await getSlackUserIDByEmail(manager)
@@ -164,16 +169,26 @@ const opened = async (payload) => {
           return userId
         })
       ])
+
       return { groupId, userIds }
     },
     async ({ groupId, userIds }) => {
-      const depId = record.get('departmentID')[0]
-      const depName = record.get('departmentName')[0]
-      const requestTitle = record.get('title')
 
+      const requestedEmail = record.get('requestedEmail')[0]
+      const requestedSlack = await getSlackUserIDByEmail(requestedEmail)
+      
+      await inviteToSlackGroup(groupId, requestedSlack)
+
+      return { groupId, userIds }
+    },
+    async ({ groupId, userIds }) => {
+
+      // const depId = record.get('departmentID')[0]
+      // const depName = record.get('departmentName')[0]
+      // const requestTitle = record.get('title')
+      //
       // const cwd = await workspace()
-
-
+      //
       // const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
       // const requestFolderName = `${requestId} (${requestTitle})`
       //
@@ -181,20 +196,21 @@ const opened = async (payload) => {
       // const folder = await createFolder(requestFolderName, [depFolder.id])
 
       // return { groupId, userIds, gdrive: { folder } }
-
+      
       return { groupId, userIds }
+
     },
     async ({ groupId }) => {
+
       const purpose = `Discuss ticket # ${number}. Request ID: ${requestId}`
+      const topic = `Github Issue: https://github.com/andela/andela-studio/issues/${number} \n`
+
       // const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
-      const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n`
 
       await setSlackGroupPurpose(groupId, purpose)
       await setSlackGroupTopic(groupId, topic)
 
       return { groupId }
-      // return { groupId, gdrive: { folder } }
-
     },
     async ({ groupId }) => {
       const teamId = await getSlackTeamID()
@@ -243,7 +259,7 @@ const labeled = async (payload) => {
         ])
         break
       case 'priority':
-        await updatePriority(record[0], labels, name, number)
+        await updatePriority(record[0], name)
         break
       case 'category':
         await updateCategory(record[0], name)
@@ -300,9 +316,7 @@ const assigned = async (payload) => {
 
       const requestedSlack = await getSlackUserIDByEmail(requestedEmail)
       
-      await inviteToSlackGroup(groupId, requestedSlack)
-
-      const message = `Hi <@${requestedSlack}>, your studio request will be serviced by <@${ownerSlackId}>`
+      const message = `<@${requestedSlack}>, your studio request will be serviced by <@${ownerSlackId}>`
 
       await postMessageToSlack(groupId, message)
     }
