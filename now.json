@@ -4,6 +4,8 @@
   "alias": "andela-studio-issue-er",
   "dotenv": "true",
   "dotenv": ".env",
-  "engines": "9.8.0",
+  "engines": {
+    "node":"9.8.0"
+  },
   "type": "docker"
 }
