@@ -18,8 +18,6 @@ const operations = require('../graphql/queries')
 // Create query and mutation variable object
 const baseVariables = { owner, name: repo }
 
-const now = moment()
-const time = (digit, unit) => now.clone().add(digit, unit).toDate()
 const tz = moment.tz.guess()
 
 const updateStatus = async (record, status) => {
@@ -62,24 +60,22 @@ const updateCategory = async (record, category) => {
 }
 
 const cleanAndUpdate = new CronJob({
-  cronTime: '00 00 23 * * 0-6',
+  cronTime: '* 00 23 * * 0-6',
   onTick: async () => {
     const now = moment()
     const twoWeeksAgo = now.clone().subtract(14, 'days').toDate()
 
     const variables = Object.assign({}, baseVariables, {
       "order": {
-        "direction": "DESC",
+        "direction": "ASC",
         "field": "UPDATED_AT"
       }
     })
 
     let allIssues = []
     let totalCount = 0
-    let cursorId = ""
-    let hasNextPage = false
 
-    const fetchClosedIssues = async function () {
+    const fetchIssues = async function (cursorId="", hasNextPage=false) {
 
       try {
 
@@ -91,14 +87,10 @@ const cleanAndUpdate = new CronJob({
 
         const { repository: { issues: { totalCount: total, pageInfo: { endCursor: cursor , hasNextPage: hasNext }, edges } } } = issues
 
-        totalCount = total
-        hasNextPage = hasNext
-        cursorId = cursor
-
         if (allIssues.length < totalCount && hasNextPage) {
 
           allIssues = [...allIssues, ...edges]
-          return await fetchClosedIssues()
+          return await fetchIssues(cursor, hasNext)
         } else {
           return allIssues
         }
@@ -107,7 +99,9 @@ const cleanAndUpdate = new CronJob({
       }
     }
 
-    await fetchClosedIssues()
+    await fetchIssues()
+
+    if (!allIssues || allIssues.length === 0) return
 
     async.each(allIssues,
       async ({ node: { number, closed, closedAt, labels, projectCards: { edges } } }) => {
@@ -155,7 +149,7 @@ const cleanAndUpdate = new CronJob({
 
     console.log(`Removing all cards from 'All Projects' closed on: ${twoWeeksAgo}`)
   },
-  start: true,
+  start: false,
   timeZone: tz
 })
 
