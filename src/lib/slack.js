@@ -5,180 +5,242 @@ const queryString = require('query-string')
 const config = require('../config')
 
 const { token, bot: botToken } = config.slack
+const { admin } = config.team
 
 const client = new Slack(token)
 const bot = new Slack(botToken)
 
-function createSlackGroup (name) {
-  return new Promise(async (resolve, reject) => {
+async function createSlackGroup (name) {
+
+  if (!name) return new Error('missing_name')
+
+  try {
+
     const groupId = await getSlackGroupID(name)
-    if (groupId) return resolve(groupId)
-    return client.groups.create(name,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data.group.id)
-      })
-  })
+
+    if (groupId) return groupId
+
+    const { data: { group: { id } } } = await client.groups.create(name)
+
+    return id
+  } catch (err) {
+    console.log(err)
+  }
 }
 
-function archiveSlackGroup (name) {
-  return new Promise(async (resolve, reject) => {
+async function archiveSlackGroup (name) {
+
+  if (!name) return new Error('missing_name')
+
+  try {
+
     const groupId = await getSlackGroupID(name)
-    return client.groups.archive(groupId,
-      (err, res) => {
-        if (err) return reject(err)
-        return resolve(res)
-      })
-  })
+
+    if (groupId) {
+      return await client.groups.archive(groupId)
+    }
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function unarchiveSlackGroup (name) {
-  return new Promise(async (resolve, reject) => {
+async function unarchiveSlackGroup (name) {
+
+  if (!name) return new Error('missing_name')
+
+  try {
+
     const groupId = await getSlackGroupID(name)
-    return client.groups.unarchive(groupId,
-      (err, res) => {
-        if (err) return reject(err)
-        return resolve(res)
-      })
-  })
+
+    if (groupId) {
+      return await client.groups.unarchive(groupId)
+    }
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function setSlackGroupPurpose (groupID, purpose='') {
-  return new Promise((resolve, reject) => {
-    return client.groups.setPurpose(groupID, purpose,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data)
-      })
-  })
-}
+async function setSlackGroupPurpose (groupId, purpose='') {
 
-function setSlackGroupTopic (groupID, topic='') {
-  return new Promise((resolve, reject) => {
-    return client.groups.setTopic(groupID, topic,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data)
-      })
-  })
-}
+  if (!groupId) return new Error('missing_group_id')
 
-function inviteBotToSlackGroup (groupID, userID) {
-  return new Promise((resolve, reject) => {
-    return client.groups.invite(groupID, userID,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data)
-      })
-  })
-}
+  try {
 
-function inviteToSlackGroup (groupID, userID) {
-  return new Promise((resolve, reject) => {
-    return client.groups.invite(groupID, userID,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data)
-      })
-  })
-}
-
-function postMessageToSlack (id, text='') {
-  return new Promise((resolve, reject) => {
-    return bot.chat.postMessage(id, text,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data)
-      })
-  })
+    return await client.groups.setPurpose(groupId, purpose)
+  } catch(err) {
+    console.log(err)
+  }
 }
 
 
-function getSlackUserID (name) {
-  return new Promise((resolve, reject) => {
-    return client.users.list((err, data) => {
-      let userID = null
-      if (err) return reject(err)
-      for (const user of data.members) {
-        if (`@${user.name}` === name) {
-          userID = user.id
-          break
-        }
-      }
-      return resolve(userID)
-    }, {
+async function setSlackGroupTopic (groupId, topic='') {
+
+  if (!groupId) return new Error('missing_group_id')
+
+  try {
+
+    return  await client.groups.setTopic(groupId, topic)
+  } catch(err) {
+    console.log(err)
+  }
+}
+
+async function inviteBotToSlackGroup (groupId, userId) {
+
+  if (!groupId) return new Error('missing_group_id')
+  if (!userId) return new Error('missing_user_id')
+
+  try {
+
+    return await client.groups.invite(groupId, userId)
+
+  } catch(err) {
+    console.log(err)
+  }
+}
+
+async function inviteToSlackGroup (groupId, userId) {
+
+  if (!groupId) return new Error('missing_group_id')
+  if (!userId) return new Error('missing_user_id')
+
+  try {
+
+    const adminId = await getSlackUserIDByEmail(admin)
+
+    if (adminId && adminId === userId) return
+
+    return await client.groups.invite(groupId, userId)
+
+  } catch(err) {
+    console.log(err)
+  }
+}
+
+async function postMessageToSlack (id, text='') {
+
+  if (!id) return new Error('missing_channel_id')
+
+  try {
+
+    return await bot.chat.postMessage(id, text)
+  } catch(err) {
+    console.log(err)
+  }
+}
+
+
+async function getSlackUserID (name) {
+
+  if (!name) return new Error('missing_name')
+
+  try {
+
+    const { data: { members } } = await client.users.list({
       limit: 1000
     })
-  })
+
+    const user = members.find(user => `@${user.name}` === name)
+
+    if (user) return user.id
+
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function getSlackUserIDByEmail (email) {
-  return new Promise(async (resolve, reject) => {
+async function getSlackUserIDByEmail (email) {
+
+  if (!email) return new Error('missing_email')
+
+  try {
+
     const teamID = await getSlackTeamID()
+
     const params = {
       team: teamID,
       token,
       email
     }
-    return fetch(` https://slack.com/api/auth.findUser?${queryString.stringify(params)}`)
-      .then((res) => res.json())
-      .then((body) => {
-        const { ok, user_id } = body
-        if (!ok) reject(new Error('User not found'))
-        resolve(user_id)
-      })
-  })
+
+    const res = fetch(` https://slack.com/api/auth.findUser?${queryString.stringify(params)}`)
+
+    if (res) {
+
+      const { ok, user_id } = res.json()
+
+      return user_id
+    }
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function getSlackGroupID (name) {
-  return new Promise((resolve, reject) => {
-    return client.groups.list((err, { groups }) => {
-      if (err) return reject(err)
+async function getSlackGroupID (name) {
 
-      const group = groups.find((group) => {
-        return group.name.toLowerCase() === name.toLowerCase()
-      })
-      if (!group) return resolve(null)
-      return resolve(group.id)
-    }, {
+  if (!name) return new Error('missing_name')
+
+  try {
+
+    const { data: { groups } } = await client.groups.list({
       limit: 1000,
       exclude_archived: true,
       exclude_members: true
     })
-  })
+
+    const group = groups.find(group=> group.name.toLowerCase() === name.toLowerCase())
+
+    if (group) return group.id
+
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function getSlackTeamID () {
-  return new Promise((resolve, reject) => {
-    return client.team.info((err, data) => {
-      if (err) return reject(err)
-      return resolve(data.team.id)
+async function getSlackTeamID () {
+
+  try {
+
+    const { data: { team: { id } } } = await client.team.info()
+
+    return id
+  } catch (err) {
+    console.log(err)
+  }
+}
+
+async function getSlackProfile (userId) {
+
+  if (!userId) return new Error('missing_user_id')
+
+  try {
+
+    const { data: { user } } = await client.users.info(userId)
+
+    return user
+  } catch(err) {
+    console.log(err)
+  }
+}
+
+async function retrieveSlackHistory (groupId) {
+
+  if (!groupId) return new Error('missing_group_id')
+
+  try {
+
+    const { data: { messages } } = await client.groups.history(groupId, {
+      count: 1000
     })
-  })
+
+    return messages.filter((message) => message.type === 'message' && !message.subtype)
+
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function getSlackProfile (userID) {
-  return new Promise((resolve, reject) => {
-    return client.users.info(userID,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data.user)
-    })
-  })
-}
 
-function retrieveSlackHistory (groupID) {
-  return new Promise((resolve, reject) => {
-    return client.groups.history(groupID,
-      (err, data) => {
-        if (err) return reject(err)
-        return resolve(data.messages
-          .filter((message) => message.type === 'message' && !message.subtype))
-      }, {
-        count: 1000
-      })
-  })
-}
 module.exports = {
   client,
   createSlackGroup,

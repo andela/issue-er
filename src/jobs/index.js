@@ -1,11 +1,12 @@
 const CronJob = require('cron').CronJob
 const moment = require('moment')
 const async = require('async')
-const dateFormat = require('dateformat')
 
 const { graphqlClient } = require('../lib/github')
 const {
-  base,
+  updateStatus,
+  updatePriority,
+  updateCategory,
   getAirtableRequestRecord
 } = require('../lib/airtable')
 
@@ -19,45 +20,6 @@ const operations = require('../graphql/queries')
 const baseVariables = { owner, name: repo }
 
 const tz = moment.tz.guess()
-
-const updateStatus = async (record, status) => {
-  if (!record) return
-  if (!status) return
-
-  const recordId = record.getId()
-  const jobStatus = record.get('jobStatus')
-  const today = dateFormat(new Date(), 'isoDate')
-
-  if (status !== jobStatus) {
-    await base('request').update(recordId, { 'jobStatus': status })
-  }
-
-  if (status === 'accepted') {
-    await base('request').update(recordId, { 'startDate': today })
-  }
-
-  if (status === 'completed') {
-    await base('request').update(recordId, { 'dateDelivered': today })
-  }
-}
-
-const updatePriority = async (record, priority) => {
-  if (!record) return
-  if (!priority) return
-
-  const recordId = record.getId()
-
-  await base('request').update(recordId, { priority })
-}
-
-const updateCategory = async (record, category) => {
-  if (!record) return
-  if (!category) return
-
-  const recordId = record.getId()
-
-  await base('request').update(recordId, { 'jobCategory': category })
-}
 
 const cleanAndUpdate = new CronJob({
   cronTime: '* 00 23 * * 0-6',
@@ -73,7 +35,6 @@ const cleanAndUpdate = new CronJob({
     })
 
     let allIssues = []
-    let totalCount = 0
 
     const fetchIssues = async function (cursorId="", hasNextPage=false) {
 
@@ -85,15 +46,15 @@ const cleanAndUpdate = new CronJob({
           initial: !hasNextPage
         }))
 
-        const { repository: { issues: { totalCount: total, pageInfo: { endCursor: cursor , hasNextPage: hasNext }, edges } } } = issues
+        const { repository: { issues: { totalCount, pageInfo: { endCursor: cursor , hasNextPage: hasNext }, edges } } } = issues
 
         if (allIssues.length < totalCount && hasNextPage) {
 
           allIssues = [...allIssues, ...edges]
           return await fetchIssues(cursor, hasNext)
-        } else {
-          return allIssues
         }
+
+        return allIssues
       } catch(err) {
         console.log(err)
       }

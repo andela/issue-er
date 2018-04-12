@@ -1,17 +1,13 @@
-const crypto = require('crypto')
 const { json, send, text } = require('micro')
+
 const CronJob = require('cron').CronJob
 const moment = require('moment')
+
+const { signRequestBody } = require('../lib/crypto')
 
 const config = require('../config')
 const actions = require('../actions')
 
-
-require('../worker')
-
-function signRequestBody (key, body) {
-  return `sha1=${crypto.createHmac('sha1', key).update(body, 'utf-8').digest('hex')}`
-}
 
 module.exports = async (req, res) => {
   // Return if not json body

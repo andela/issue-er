@@ -17,17 +17,22 @@ const drive = google.drive({
 
 const MIME_TYPE = "application/vnd.google-apps.folder"
 
-function workspace () {
-  return new Promise(async (resolve, reject) => {
+async function workspace () {
+  try {
+
     const folder = await findFolder(workDir)
-    if (folder) return resolve(folder)
-    return createFolder(workDir)
-      .then(({ data }) => resolve(data))
-      .catch(err => reject(err))
-  })
+
+    if (folder) return folder
+
+    return await createFolder(workDir)
+
+  } catch (err) {
+    console.log(err)
+  }
 }
 
-function findFolder (name) {
+async function findFolder (name) {
+
   if (!name) return
 
   const params = {
@@ -39,38 +44,49 @@ function findFolder (name) {
 
   params.q = `mimeType='${MIME_TYPE}' and name contains '${name}'`
 
-  return new Promise((resolve, reject) => {
-    return drive.files.list(params)
-      .then(({ data: { files } }) => {
-        const file = files.find(file => file.name === name)
+  try {
 
-        if (!file)  return resolve(null)
-        return getFolder(file)
-          .then(res => resolve(res.data))
-          .catch(err => reject(err))
-      }).catch(err => reject(err))
-  })
+    const { data: { files } } = await drive.files.list(params)
+
+    const file = files.find(file => file.name === name)
+
+    if (file) return file
+
+    return await getFolder(file)
+
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function getFolder (file) {
+async function getFolder (file) {
+
   if (!file.id) throw new Error(`Must specify an 'id' property`)
+
   const params = {
     fileId: file.id,
     supportsTeamDrives: true,
     fields: `id, name, parents`
   }
-  return new Promise((resolve, reject) => {
-    return drive.files.get(params)
-      .then(file => resolve(file))
-      .catch(err => reject(err))
-  })
+
+  try {
+
+    return await drive.files.get(params)
+  } catch(err) {
+    console.log(err)
+  }
 }
 
-function createFolder (name, parents=[]) {
+async function createFolder (name, parents=[]) {
+
   if (!name) return
-  return new Promise(async (resolve, reject) => {
+
+  try {
+
     const folder = await findFolder(name)
-    if (folder) return resolve(folder)
+
+    if (folder) return folder
+
     const resource = {
       name,
       parents,
@@ -80,15 +96,16 @@ function createFolder (name, parents=[]) {
       supportsTeamDrives: true,
       fields: `id, name`
     }
-    return drive.files.create({
+   
+    const { data: { id, name } } =  await drive.files.create({
       resource,
       ...params
     })
-      .then(({ data: { id, name } }) => {
-        return resolve({ id, name })
-      })
-      .catch(err => reject(err))
-  })
+
+    return { id, name }
+  } catch (err) {
+    console.log(err)   
+  }
 }
 
 module.exports = {
