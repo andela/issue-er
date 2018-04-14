@@ -27,6 +27,8 @@ const cleanAndUpdate = new CronJob({
     const now = moment()
     const twoWeeksAgo = now.clone().subtract(14, 'days').toDate()
 
+    console.log('hi')
+
     const variables = Object.assign({}, baseVariables, {
       "order": {
         "direction": "ASC",
@@ -67,13 +69,13 @@ const cleanAndUpdate = new CronJob({
     async.each(allIssues,
       async ({ node: { number, closed, closedAt, labels, projectCards: { edges } } }) => {
         try {
-          // Update Airtable information
+          // Update Airtable & Github project boards information
           const record = await getAirtableRequestRecord(number)
 
           if (record) {
             async.each(labels.edges, async (label) => {
               const { node: { name, description } } = label
-              
+
               switch(description) {
                 case 'status':
                   await updateStatus(record[0], name)
@@ -110,8 +112,12 @@ const cleanAndUpdate = new CronJob({
 
     console.log(`Removing all cards from 'All Projects' closed on: ${twoWeeksAgo}`)
   },
-  start: false,
+  start: true, // update
   timeZone: tz
 })
+
+cleanAndUpdate.start()
+
+console.log(cleanAndUpdate.running)
 
 module.exports = { cleanAndUpdate }

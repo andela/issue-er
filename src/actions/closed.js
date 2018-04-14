@@ -55,6 +55,7 @@ async function closed (payload) {
       ])
     },
     async () => {
+
       await archiveSlackGroup(group)
     }
   ])

@@ -16,13 +16,16 @@ async function createSlackGroup (name) {
 
   try {
 
-    const groupId = await getSlackGroupID(name)
+    const channel = await getSlackGroupID(name)
 
-    if (groupId) return groupId
+    console.log(channel)
 
-    const { data: { group: { id } } } = await client.groups.create(name)
+    if (channel) return channel
+
+    const { group: { id } } = await client.groups.create(name)
 
     return id
+
   } catch (err) {
     console.log(err)
   }
@@ -34,10 +37,10 @@ async function archiveSlackGroup (name) {
 
   try {
 
-    const groupId = await getSlackGroupID(name)
+    const channel = await getSlackGroupID(name)
 
-    if (groupId) {
-      return await client.groups.archive(groupId)
+    if (channel) {
+      return await client.groups.archive(channel)
     }
   } catch(err) {
     console.log(err)
@@ -50,67 +53,67 @@ async function unarchiveSlackGroup (name) {
 
   try {
 
-    const groupId = await getSlackGroupID(name)
+    const channel = await getSlackGroupID(name)
 
-    if (groupId) {
-      return await client.groups.unarchive(groupId)
+    if (channel) {
+      return await client.groups.unarchive(channel)
     }
   } catch(err) {
     console.log(err)
   }
 }
 
-async function setSlackGroupPurpose (groupId, purpose='') {
+async function setSlackGroupPurpose (channel, purpose='') {
 
-  if (!groupId) return new Error('missing_group_id')
+  if (!channel) return new Error('missing_group_id')
 
   try {
 
-    return await client.groups.setPurpose(groupId, purpose)
+    return await client.groups.setPurpose(channel, purpose)
   } catch(err) {
     console.log(err)
   }
 }
 
 
-async function setSlackGroupTopic (groupId, topic='') {
+async function setSlackGroupTopic (channel, topic='') {
 
-  if (!groupId) return new Error('missing_group_id')
+  if (!channel) return new Error('missing_group_id')
 
   try {
 
-    return  await client.groups.setTopic(groupId, topic)
+    return  await client.groups.setTopic(channel, topic)
   } catch(err) {
     console.log(err)
   }
 }
 
-async function inviteBotToSlackGroup (groupId, userId) {
+async function inviteBotToSlackGroup (channel, user) {
 
-  if (!groupId) return new Error('missing_group_id')
-  if (!userId) return new Error('missing_user_id')
+  if (!channel) return new Error('missing_group_id')
+  if (!user) return new Error('missing_user_id')
 
   try {
 
-    return await client.groups.invite(groupId, userId)
+    return await client.groups.invite(channel, user)
 
   } catch(err) {
     console.log(err)
   }
 }
 
-async function inviteToSlackGroup (groupId, userId) {
+async function inviteToSlackGroup (channel, user) {
 
-  if (!groupId) return new Error('missing_group_id')
-  if (!userId) return new Error('missing_user_id')
+  if (!channel) return new Error('missing_group_id')
+  if (!user) return new Error('missing_user_id')
 
   try {
 
     const adminId = await getSlackUserIDByEmail(admin)
 
-    if (adminId && adminId === userId) return
+    if (adminId === user) return
 
-    return await client.groups.invite(groupId, userId)
+    return await client.groups.invite(channel, user)
 
   } catch(err) {
     console.log(err)
@@ -134,13 +137,27 @@ async function getSlackUserID (name) {
 
   if (!name) return new Error('missing_name')
 
-  try {
+  let allMembers = []
 
-    const { data: { members } } = await client.users.list({
-      limit: 1000
+  const fetchUsers = async function (cursor=null) {
+
+    const { members, response_metadata: { next_cursor } } = await client.users.list({
+      cursor,
+      limit: 200
     })
 
-    const user = members.find(user => `@${user.name}` === name)
+    if (next_cursor) {
+      allMembers = [...allMembers, ...members]
+
+      return await fetchUsers(next_cursor)
+    }
+  }
+
+  try {
+
+    await fetchUsers()
+
+    const user = allMembers.find(user => `@${user.name}` === name)
 
     if (user) return user.id
 
@@ -163,14 +180,11 @@ async function getSlackUserIDByEmail (email) {
       email
     }
 
-    const res = fetch(` https://slack.com/api/auth.findUser?${queryString.stringify(params)}`)
+    const res = await fetch(` https://slack.com/api/auth.findUser?${queryString.stringify(params)}`)
 
-    if (res) {
-
-      const { ok, user_id } = res.json()
+    const { ok, user_id } = await res.json()
 
       return user_id
-    }
   } catch(err) {
     console.log(err)
   }
@@ -180,15 +194,29 @@ async function getSlackGroupID (name) {
 
   if (!name) return new Error('missing_name')
 
-  try {
+  let allGroups = []
 
-    const { data: { groups } } = await client.groups.list({
-      limit: 1000,
-      exclude_archived: true,
-      exclude_members: true
+  const fetchGroups = async function (cursor=null) {
+
+    const { groups, response_metadata: { next_cursor } } = await client.groups.list({
+      cursor,
+      limit: 200,
+      exclude_members: true,
+      exclude_archived: true
     })
 
-    const group = groups.find(group=> group.name.toLowerCase() === name.toLowerCase())
+    if (next_cursor) {
+      allGroups = [...allGroups, ...groups]
+
+      return await fetchGroups(next_cursor)
+    }
+  }
+
+  try {
+
+    await fetchGroups()
+
+    const group = allGroups.find(group => group.name === name)
 
     if (group) return group.id
 
@@ -201,9 +229,10 @@ async function getSlackTeamID () {
 
   try {
 
-    const { data: { team: { id } } } = await client.team.info()
+    const { team: { id } } = await client.team.info()
 
     return id
+
   } catch (err) {
     console.log(err)
   }
@@ -215,21 +244,22 @@ async function getSlackProfile (userId) {
 
   try {
 
-    const { data: { user } } = await client.users.info(userId)
+    const { user }  = await client.users.info(userId)
 
     return user
+
   } catch(err) {
     console.log(err)
   }
 }
 
-async function retrieveSlackHistory (groupId) {
+async function retrieveSlackHistory (channel) {
 
-  if (!groupId) return new Error('missing_group_id')
+  if (!channel) return new Error('missing_group_id')
 
   try {
 
-    const { data: { messages } } = await client.groups.history(groupId, {
+    const { messages } = await client.groups.history(channel, {
       count: 1000
     })
 
@@ -239,7 +269,6 @@ async function retrieveSlackHistory (groupId) {
     console.log(err)
   }
 }
-
 
 module.exports = {
   client,

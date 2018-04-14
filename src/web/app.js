@@ -8,6 +8,8 @@ const { signRequestBody } = require('../lib/crypto')
 const config = require('../config')
 const actions = require('../actions')
 
+require('../worker')
+
 
 module.exports = async (req, res) => {
   // Return if not json body
@@ -73,7 +75,7 @@ module.exports = async (req, res) => {
 
     const job = new CronJob({
       cronTime: (action === 'opened' || action === 'closed')
-      ? time(15, 'minutes')
+      ? time(1, 'minute')
       : time(1, 'minute'),
       onTick: () => { actions[action](payload) },
       start: false,

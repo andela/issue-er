@@ -2,7 +2,7 @@ const { google } = require('googleapis')
 
 const config = require('../config')
 
-const { secret, scopes, workDir } = config.google
+const { secret, scopes, workDir, rootId } = config.google
 
 const jwtClient = new google.auth.JWT({
   email: secret.client_email,
@@ -17,12 +17,11 @@ const drive = google.drive({
 
 const MIME_TYPE = "application/vnd.google-apps.folder"
 
+
+let counter = 0
+
 async function workspace () {
   try {
-
-    const folder = await findFolder(workDir)
-
-    if (folder) return folder
 
     return await createFolder(workDir)
 
@@ -39,7 +38,7 @@ async function findFolder (name) {
     supportsTeamDrives: true,
     includeTeamDriveItems: true,
     pageSize: 1,
-    fields: `files(id, name), incompleteSearch`
+    fields: `files(id, name, parents), incompleteSearch`
   }
 
   params.q = `mimeType='${MIME_TYPE}' and name contains '${name}'`
@@ -50,10 +49,11 @@ async function findFolder (name) {
 
     const file = files.find(file => file.name === name)
 
-    if (file) return file
+    if (file && Object.keys(file).length > 0) {
+      return await getFolder(file)
+    }
 
-    return await getFolder(file)
-
+    return null
   } catch(err) {
     console.log(err)
   }
@@ -61,7 +61,7 @@ async function findFolder (name) {
 
 async function getFolder (file) {
 
-  if (!file.id) throw new Error(`Must specify an 'id' property`)
+  if (!file.id) throw new Error(`missing_id`)
 
   const params = {
     fileId: file.id,
@@ -71,7 +71,9 @@ async function getFolder (file) {
 
   try {
 
-    return await drive.files.get(params)
+    const { data } = await drive.files.get(params)
+
+    return data
   } catch(err) {
     console.log(err)
   }
@@ -92,19 +94,21 @@ async function createFolder (name, parents=[]) {
       parents,
       mimeType: MIME_TYPE,
     }
+
     const params = {
       supportsTeamDrives: true,
       fields: `id, name`
     }
-   
-    const { data: { id, name } } =  await drive.files.create({
+
+    const { data: { id, name: folderName } } =  await drive.files.create({
       resource,
       ...params
     })
 
-    return { id, name }
+    return { id, name: folderName }
+
   } catch (err) {
-    console.log(err)   
+    console.log(err)
   }
 }
 

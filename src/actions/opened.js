@@ -19,10 +19,17 @@ const {
   setSlackGroupPurpose,
 } = require('../lib/slack')
 
+
+const {
+  workspace,
+  createFolder
+} = require('../lib/google')
+
 const config = require('../config')
 
 const { managers, namespace } = config.team
 const { view } = config.airtable
+const { url } = config.google
 
 async function opened (payload) {
   const { issue: { number, body, assignee: { login } } } = payload
@@ -71,44 +78,38 @@ async function opened (payload) {
     },
     async ({ groupId, userIds }) => {
 
-      // const depId = record.get('departmentID')[0]
-      // const depName = record.get('departmentName')[0]
-      // const requestTitle = record.get('title')
-      //
-      // const cwd = await workspace()
-      //
-      // const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
-      // const requestFolderName = `${requestId} (${requestTitle})`
-      //
-      // const depFolder = await createFolder(depFolderName, [cwd.id])
-      // const folder = await createFolder(requestFolderName, [depFolder.id])
+      const depId = record.get('departmentID')[0]
+      const depName = record.get('departmentName')[0]
+      const requestTitle = record.get('title')
 
-      // return { groupId, userIds, gdrive: { folder } }
+      const cwd = await workspace()
+
+      const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
+      const depFolder = await createFolder(depFolderName, [cwd.id])
+
+
+      const requestFolderName = `${requestId} (${requestTitle})`
+      const folder = await createFolder(requestFolderName, [depFolder.id])
+
       
-      return { groupId, userIds }
-
+      return { groupId, userIds, gdrive: { folder } }
     },
-    async ({ groupId }) => {
+    async ({ groupId, gdrive: { folder } }) => {
 
       const purpose = `Discuss ticket # ${number}. Request ID: ${requestId}`
-      const topic = `Github Issue: https://github.com/andela/andela-studio/issues/${number} \n`
 
-      // const topic = `Github Issue: https://github.com/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
+      const topic = `Github Issue: https://github.com/andela/andela-studio/issues/${number} \n GDrive Folder: ${url}/${folder.id}`
 
       await setSlackGroupPurpose(groupId, purpose)
       await setSlackGroupTopic(groupId, topic)
 
-      return { groupId }
+      return { groupId, gdrive: { folder } }
     },
-    async ({ groupId }) => {
+    async ({ groupId, gdrive: { folder } }) => {
       const teamId = await getSlackTeamID()
 
-      // await issues.editIssue(number, {
-      //   body: `#### [Airtable Record: ${requestId}](${requestView}) \r\n #### [Google Drive: ${folder.name}](${url}/${folder.id}) \r\n #### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
-      // })
-
       await issues.editIssue(number, {
-        body: `#### [Airtable Record: ${requestId}](${requestView}) \r\n #### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
+        body: `#### [Airtable Record: ${requestId}](${requestView}) \r\n #### [Google Drive: ${folder.name}](${url}/${folder.id}) \r\n #### [Slack: ${group}](https://slack.com/app_redirect?channel=${groupId}&&team=${teamId}) \r\n ${body} \r\n `
       })
     }
   ])

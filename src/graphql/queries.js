@@ -148,7 +148,7 @@ module.exports = {
     query FindAllIssues($owner: String!, $name: String!, $order: IssueOrder!, $initial: Boolean = true, $hasNextPage: Boolean = false, $cursorId: String!) {
       repository(owner: $owner, name: $name) {
         ...@skip(if: $initial) {
-          issues(first: 100, orderBy: $order, after: $cursorId) {
+          issues(first: 20, orderBy: $order, after: $cursorId) {
             totalCount
             edges {
               node {
@@ -186,7 +186,7 @@ module.exports = {
           }
         }
         ...@skip (if: $hasNextPage) {
-          issues(first: 100, orderBy: $order ) {
+          issues(first: 20, orderBy: $order ) {
             totalCount
             edges {
               node {

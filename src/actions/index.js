@@ -1,6 +1,6 @@
-module.exports = {
-  opened: require('./opened'),
-  labeled: require('./closed'),
-  closed: require('./closed'),
-  assigned: require('./assigned')
-}
+const opened = require('./opened')
+const assigned = require('./assigned')
+const labeled = require('./labeled')
+const closed = require('./closed')
+
+module.exports = { opened, assigned, labeled, closed }
