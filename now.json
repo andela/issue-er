@@ -1,0 +1,11 @@
+{
+  "name": "andela-studio-issue-er",
+  "description": "GitHub issues manager",
+  "alias": "andela-studio-issue-er",
+  "dotenv": "true",
+  "dotenv": ".env",
+  "engines": {
+    "node":"9.8.0"
+  },
+  "type": "docker"
+}

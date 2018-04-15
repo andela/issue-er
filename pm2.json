@@ -1,0 +1,26 @@
+{
+  "apps": [{
+    "name": "web",
+    "script": "src/web",
+    "instances": "1",
+    "exec_mode": "cluster",
+    "env": {
+      "NODE_ENV": "development"
+    },
+    "env_production": {
+      "NODE_ENV": "production"
+    }
+  },
+  {
+    "name": "worker",
+    "script": "src/worker",
+    "instances": "1",
+    "exec_mode": "cluster",
+    "env": {
+      "NODE_ENV": "development"
+    },
+    "env_production": {
+      "NODE_ENV": "production"
+    }
+  }]
+}
