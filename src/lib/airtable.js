@@ -35,13 +35,14 @@ function getAirtableStaffRecord (assignee) {
 }
 
 async function updateStatus (record, status) {
-  try {
-      if (!record) return
-      if (!status) return
+  if (!record) return
+  if (!status) return
 
-      const recordId = record.getId()
-      const jobStatus = record.get('jobStatus')
-      const today = dateFormat(new Date(), 'isoDate')
+  const recordId = record.getId()
+  const jobStatus = record.get('jobStatus')
+  const today = dateFormat(new Date(), 'isoDate')
+
+  try {
 
       if (status !== jobStatus) {
         await base('request').update(recordId, { 'jobStatus': status })
@@ -60,12 +61,14 @@ async function updateStatus (record, status) {
 }
 
 async function updatePriority (record, priority) {
-  try {
-    if (!record) return
-    if (!priority) return
 
-    const recordId = record.getId()
-    const jobPriority = record.get('priority')
+  if (!record) return
+  if (!priority) return
+
+  const recordId = record.getId()
+  const jobPriority = record.get('priority')
+
+  try {
 
     if (priority !== jobPriority) {
       await base('request').update(recordId, { priority })
@@ -76,12 +79,13 @@ async function updatePriority (record, priority) {
 }
 
 async function updateCategory (record, category) {
-  try {
-    if (!record) return
-    if (!category) return
+  if (!record) return
+  if (!category) return
 
-    const recordId = record.getId()
-    const jobCategory = record.get('jobCategory')
+  const recordId = record.getId()
+  const jobCategory = record.get('jobCategory')
+
+  try {
 
     if (category !== jobCategory) {
       await base('request').update(recordId, { 'jobCategory': category })

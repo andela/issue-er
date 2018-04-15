@@ -2,7 +2,7 @@ const joi = require('joi')
 
 const schema = joi.object({
   GDRIVE_TEAM_DIR_ID: joi.string().required(),
-  GDRIVE_WORK_DIR: joi.string().required(),
+  GDRIVE_WORK_DIR_ID: joi.string().required(),
   GDRIVE_URL: joi.string().required(),
   GS_TYPE: joi.string().required(),
   GS_PROJECT: joi.string().required(),
@@ -25,8 +25,8 @@ if (error) throw new Error(`Config validation error: ${error.message}`)
 
 const config = {
   google: {
-    rootId: vars.GDDRIVE_TEAM_DIR_ID,
-    workDir: vars.GDRIVE_WORK_DIR,
+    teamDirId: vars.GDDRIVE_TEAM_DIR_ID,
+    workDirId: vars.GDRIVE_WORK_DIR_ID,
     url: vars.GDRIVE_URL,
     scopes: vars.GS_SCOPES.split(',') || [],
     secret: {

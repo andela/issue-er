@@ -49,7 +49,7 @@ async function assigned (payload) {
       const requestedEmail = record.get('requestedEmail')[0]
 
       const requestedSlack = await getSlackUserIDByEmail(requestedEmail)
-      
+
       const message = `<@${requestedSlack}>, your studio request will be serviced by <@${ownerSlackId}>`
 
       await postMessageToSlack(groupId, message)

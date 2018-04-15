@@ -21,7 +21,6 @@ const {
 
 
 const {
-  workspace,
   createFolder
 } = require('../lib/google')
 
@@ -29,7 +28,7 @@ const config = require('../config')
 
 const { managers, namespace } = config.team
 const { view } = config.airtable
-const { url } = config.google
+const { url, workDirId } = config.google
 
 async function opened (payload) {
   const { issue: { number, body, assignee: { login } } } = payload
@@ -71,7 +70,7 @@ async function opened (payload) {
 
       const requestedEmail = record.get('requestedEmail')[0]
       const requestedSlack = await getSlackUserIDByEmail(requestedEmail)
-      
+
       await inviteToSlackGroup(groupId, requestedSlack)
 
       return { groupId, userIds }
@@ -82,16 +81,12 @@ async function opened (payload) {
       const depName = record.get('departmentName')[0]
       const requestTitle = record.get('title')
 
-      const cwd = await workspace()
-
       const depFolderName = `${depId} (${depName.charAt(0).toUpperCase()}${depName.slice(1)})`
-      const depFolder = await createFolder(depFolderName, [cwd.id])
-
+      const depFolder = await createFolder(depFolderName, [workDirId])
 
       const requestFolderName = `${requestId} (${requestTitle})`
       const folder = await createFolder(requestFolderName, [depFolder.id])
 
-      
       return { groupId, userIds, gdrive: { folder } }
     },
     async ({ groupId, gdrive: { folder } }) => {

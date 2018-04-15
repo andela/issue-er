@@ -18,8 +18,6 @@ async function createSlackGroup (name) {
 
     const channel = await getSlackGroupID(name)
 
-    console.log(channel)
-
     if (channel) return channel
 
     const { group: { id } } = await client.groups.create(name)
@@ -190,39 +188,22 @@ async function getSlackUserIDByEmail (email) {
   }
 }
 
-async function getSlackGroupID (name) {
+function getSlackGroupID (name) {
+  return new Promise((resolve, reject) => {
+    return client.groups.list((err, { groups }) => {
+      if (err) return reject(err)
 
-  if (!name) return new Error('missing_name')
-
-  let allGroups = []
-
-  const fetchGroups = async function (cursor=null) {
-
-    const { groups, response_metadata: { next_cursor } } = await client.groups.list({
-      cursor,
-      limit: 200,
-      exclude_members: true,
-      exclude_archived: true
+      const group = groups.find((group) => {
+        return group.name.toLowerCase() === name.toLowerCase()
+      })
+      if (!group) return resolve(null)
+      return resolve(group.id)
+    }, {
+      limit: 1000,
+      exclude_archived: true,
+      exclude_members: true
     })
-
-    if (next_cursor) {
-      allGroups = [...allGroups, ...groups]
-
-      return await fetchGroups(next_cursor)
-    }
-  }
-
-  try {
-
-    await fetchGroups()
-
-    const group = allGroups.find(group => group.name === name)
-
-    if (group) return group.id
-
-  } catch(err) {
-    console.log(err)
-  }
+  })
 }
 
 async function getSlackTeamID () {

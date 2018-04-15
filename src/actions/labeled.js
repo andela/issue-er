@@ -116,22 +116,21 @@ async function labeled (payload) {
     if (name === 'incoming') {
       await addToProject(project, issue, variables)
     }
-
-    // Update label with 'expedite'
-    const expediteLabel = 'expedite'
-    const expediteReq = record.get('expedite')
-    if (expediteReq && !labels.includes(expediteLabel)) {
-      const currentLabels = labels.map((label) => label.name)
-      const newLabels = [expediteLabel, ...currentLabels]
-      await issues.editIssue(number, { labels: newLabels })
-    }
-
-    // Close ticket if issue marked completed
-    if (name === 'completed' && state !== 'closed') {
-      console.log('hi')
-      await issues.editIssue(number, { state: 'closed' })
-    }
   })
+
+  // Update label with 'expedite'
+  const expediteLabel = 'expedite'
+  const expediteReq = record.get('expedite')
+  if (expediteReq && !labels.includes(expediteLabel)) {
+    const currentLabels = labels.map((label) => label.name)
+    const newLabels = [expediteLabel, ...currentLabels]
+    await issues.editIssue(number, { labels: newLabels })
+  }
+
+  // Close ticket if issue marked completed
+  if (name === 'completed' && state === 'open') {
+    await issues.editIssue(number, { state: 'closed' })
+  }
 }
 
 module.exports = labeled

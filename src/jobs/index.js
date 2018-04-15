@@ -112,12 +112,8 @@ const cleanAndUpdate = new CronJob({
 
     console.log(`Removing all cards from 'All Projects' closed on: ${twoWeeksAgo}`)
   },
-  start: true, // update
+  start: false,
   timeZone: tz
 })
-
-cleanAndUpdate.start()
-
-console.log(cleanAndUpdate.running)
 
 module.exports = { cleanAndUpdate }

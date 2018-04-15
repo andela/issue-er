@@ -2,7 +2,7 @@ const { google } = require('googleapis')
 
 const config = require('../config')
 
-const { secret, scopes, workDir, rootId } = config.google
+const { secret, scopes } = config.google
 
 const jwtClient = new google.auth.JWT({
   email: secret.client_email,
@@ -17,19 +17,6 @@ const drive = google.drive({
 
 const MIME_TYPE = "application/vnd.google-apps.folder"
 
-
-let counter = 0
-
-async function workspace () {
-  try {
-
-    return await createFolder(workDir)
-
-  } catch (err) {
-    console.log(err)
-  }
-}
-
 async function findFolder (name) {
 
   if (!name) return
@@ -37,11 +24,11 @@ async function findFolder (name) {
   const params = {
     supportsTeamDrives: true,
     includeTeamDriveItems: true,
-    pageSize: 1,
+    page: 1,
     fields: `files(id, name, parents), incompleteSearch`
   }
 
-  params.q = `mimeType='${MIME_TYPE}' and name contains '${name}'`
+  params.q = `mimeType='${MIME_TYPE}' and name='${name}'`
 
   try {
 
@@ -52,8 +39,6 @@ async function findFolder (name) {
     if (file && Object.keys(file).length > 0) {
       return await getFolder(file)
     }
-
-    return null
   } catch(err) {
     console.log(err)
   }
@@ -83,21 +68,27 @@ async function createFolder (name, parents=[]) {
 
   if (!name) return
 
+  const resource = {
+    name,
+    parents,
+    mimeType: MIME_TYPE,
+  }
+
+  const params = {
+    supportsTeamDrives: true,
+    fields: `id, name`
+  }
+
   try {
 
     const folder = await findFolder(name)
 
-    if (folder) return folder
-
-    const resource = {
-      name,
-      parents,
-      mimeType: MIME_TYPE,
-    }
-
-    const params = {
-      supportsTeamDrives: true,
-      fields: `id, name`
+    if (folder.name === name) {
+      if (folder.parents && folder.parents[0]) {
+        if (parents[0] && parents[0] === folder.parents[0]) {
+          return folder
+        }
+      }
     }
 
     const { data: { id, name: folderName } } =  await drive.files.create({
@@ -115,7 +106,6 @@ async function createFolder (name, parents=[]) {
 module.exports = {
   createFolder,
   findFolder,
-  getFolder,
-  workspace
+  getFolder
 }
 
