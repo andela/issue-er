@@ -120,7 +120,7 @@ async function labeled (payload) {
 
   // Update label with 'expedite'
   const expediteLabel = 'expedite'
-  const expediteReq = record.get('expedite')
+  const expediteReq = record[0].get('expedite')
   if (expediteReq && !labels.includes(expediteLabel)) {
     const currentLabels = labels.map((label) => label.name)
     const newLabels = [expediteLabel, ...currentLabels]
