@@ -67,7 +67,7 @@ const moveProjectCard = async (destinationColumnName, issue, variables) => {
 
 async function labeled (payload) {
 
-  const { issue: { number, state, labels }, label: { name } } = payload
+  const { issue: { number, labels }, label: { name } } = payload
 
   const record = await getAirtableRequestRecord(number)
 
@@ -125,11 +125,6 @@ async function labeled (payload) {
     const currentLabels = labels.map((label) => label.name)
     const newLabels = [expediteLabel, ...currentLabels]
     await issues.editIssue(number, { labels: newLabels })
-  }
-
-  // Close ticket if issue marked completed
-  if (name === 'completed' && state === 'open') {
-    await issues.editIssue(number, { state: 'closed' })
   }
 }
 
